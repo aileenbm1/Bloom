@@ -9,7 +9,7 @@ import { portal } from "./routes/portal";
 const app = new Hono<AppEnv>();
 
 app.use("*", securityHeaders);
-// Solo la API y el portal necesitan APP_SECRET; los archivos estáticos se sirven siempre.
+// Solo la API y el portal necesitan APP_SECRET (si falta, se genera y guarda en D1).
 for (const path of ["/api/*", "/cuenta", "/cuenta/*"]) {
   app.use(path, requireSecret);
   app.use(path, withIpHash);

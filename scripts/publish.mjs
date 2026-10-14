@@ -124,7 +124,6 @@ async function check() {
     body: JSON.stringify({ username: "verificacion-" + randomBytes(4).toString("hex"), password: "x" }),
   });
   const body = await probe.json().catch(() => ({}));
-  if (probe.status === 503) throw new Error("APP_SECRET no está configurado: ejecuta npm run secret:set");
   if (probe.status !== 401) throw new Error(`la API respondió ${probe.status}: ${JSON.stringify(body)}`);
 }
 let lastErr;

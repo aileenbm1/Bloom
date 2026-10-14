@@ -1,7 +1,7 @@
 export interface Env {
   DB: D1Database;
   ASSETS: Fetcher;
-  /** Secreto aleatorio (≥ 32 caracteres). Se configura con `wrangler secret put APP_SECRET`. */
+  /** Secreto aleatorio (≥ 32 caracteres). Opcional: si falta, se genera y guarda en D1. */
   APP_SECRET: string;
   BUSINESS_NAME: string;
   WHATSAPP_NUMBER: string;

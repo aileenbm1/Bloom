@@ -1,7 +1,7 @@
 import type { Context, MiddlewareHandler } from "hono";
 import { getCookie } from "hono/cookie";
 import type { AppEnv } from "../env";
-import { hashIp, safeEqual, sha256Hex } from "./crypto";
+import { b64url, hashIp, randomBytes, safeEqual, sha256Hex } from "./crypto";
 
 export const ADMIN_COOKIE = "__Host-bloom_admin";
 export const PORTAL_COOKIE = "__Host-bloom_cuenta";
@@ -52,26 +52,31 @@ export const withIpHash: MiddlewareHandler<AppEnv> = async (c, next) => {
   await next();
 };
 
+let storedSecret: string | null = null;
+
 /**
- * Exige que APP_SECRET exista y tenga longitud suficiente. Si falta, responde 503 con
- * instrucciones (sin revelar ningún valor) en lugar de un error 500 genérico.
+ * Garantiza que exista APP_SECRET. Si no se configuró como secreto de Cloudflare
+ * (o en .dev.vars), se genera uno aleatorio la primera vez y se guarda en D1,
+ * así no hace falta ningún paso manual.
  */
 export const requireSecret: MiddlewareHandler<AppEnv> = async (c, next) => {
   const s = c.env.APP_SECRET;
-  if (typeof s === "string" && s.length >= 32) return next();
-  const local = ["localhost", "127.0.0.1"].includes(new URL(c.req.url).hostname);
-  const fix = local
-    ? "Falta APP_SECRET en el entorno local. Detén el servidor y ejecuta: npm run setup:local  (o simplemente npm run dev, que lo hace automáticamente)."
-    : "Falta el secreto APP_SECRET en Cloudflare. Ejecuta: npm run secret:set";
-  console.error(JSON.stringify({ level: "error", message: "APP_SECRET ausente o demasiado corto" }));
-  if (new URL(c.req.url).pathname.startsWith("/api/")) {
-    return c.json({ error: "Configuración incompleta del servidor. " + fix }, 503);
+  if (!(typeof s === "string" && s.length >= 32)) {
+    storedSecret ??= await loadOrCreateSecret(c.env.DB);
+    c.env.APP_SECRET = storedSecret;
   }
-  return c.html(
-    `<!doctype html><html lang="es-MX"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>BLOOM · Configuración pendiente</title><link rel="stylesheet" href="/portal.css"></head><body><header class="brand"><span class="logo">BLOOM</span></header><main class="wrap"><h1>Configuración pendiente</h1><p>${fix}</p></main></body></html>`,
-    503,
-  );
+  await next();
 };
+
+async function loadOrCreateSecret(db: D1Database): Promise<string> {
+  await db.batch([
+    db.prepare(`CREATE TABLE IF NOT EXISTS app_config (key TEXT PRIMARY KEY, value TEXT NOT NULL)`),
+    db.prepare(`INSERT OR IGNORE INTO app_config (key, value) VALUES ('app_secret', ?1)`).bind(b64url(randomBytes(48))),
+  ]);
+  const row = await db.prepare(`SELECT value FROM app_config WHERE key = 'app_secret'`).first<{ value: string }>();
+  if (!row) throw new Error("No se pudo inicializar APP_SECRET");
+  return row.value;
+}
 
 // --- Limitación de intentos (ventana fija, almacenada en D1) -----------------
 

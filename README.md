@@ -150,7 +150,7 @@ Al terminar, Wrangler muestra la URL real, por ejemplo `https://bloom.TU-SUBDOMI
 
 ### 3.10 Configurar el secreto y el primer administrador
 ```bash
-npm run secret:set       # genera APP_SECRET aleatorio y lo guarda cifrado en Cloudflare (no se muestra)
+npm run secret:set       # opcional: APP_SECRET propio en Cloudflare (si no, se genera solo en D1)
 npm run admin:create -- --remote --username leilani --name "Leilani"
 ```
 `admin:create` te pide la contraseña sin mostrarla (mínimo 12 caracteres). La convierte en hash PBKDF2-SHA256 en tu computadora y solo envía el hash a D1. Puedes repetir el comando para restablecer una contraseña olvidada o crear otra cuenta. (El secreto se configura después del primer despliegue porque Cloudflare necesita que el Worker exista.)
@@ -253,7 +253,6 @@ npm run test:e2e     # wrangler dev real: reinicio, respaldo/restauración y tel
 ## 10. Solución de problemas
 
 - **"Configuración pendiente" / error 503 en local:** falta `APP_SECRET` en `.dev.vars`. Arranca con `npm run dev` (lo crea solo) o ejecuta `npm run setup:local`. Si arrancas con `npx wrangler dev` directamente, ese paso no se ejecuta.
-- **"Configuración pendiente" en Cloudflare:** falta el secreto → `npm run secret:set`.
 - **El build de Cloudflare falla al crear la base D1 (permisos):** ejecuta una vez `npm run publicar` desde Codespaces; los builds siguientes encuentran la base por su nombre.
 - **Error 1102 o "Worker exceeded resource limits" al iniciar sesión (plan gratuito):** el hash de contraseña usa 100 000 iteraciones y puede rebasar el límite de CPU del plan gratuito. Ejecuta `npm run admin:create -- --remote --username leilani --iterations 50000` (o el plan Workers Paid).
 - **Cambiar APP_SECRET:** los enlaces existentes siguen funcionando para las clientas, pero el panel ya no podrá mostrarlos; usa *Regenerar* y envía el nuevo.
