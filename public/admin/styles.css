@@ -114,7 +114,15 @@ tr.voided td.keep, tr.cancelled td.keep { text-decoration: none; }
 .audit-what { flex: 1; min-width: 0; }
 .audit-what strong, .audit-what span { display: block; overflow-wrap: anywhere; }
 .audit-go { font-size: 1.4rem; color: var(--muted); }
-.tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 4px; }
+.purchase-box-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 8px; }
+.purchase-box-head h2 { margin: 0; }
+.purchase-row { border-top: 1px solid var(--line); }
+.purchase-row summary { display: flex; align-items: center; gap: 12px; padding: 10px 0; cursor: pointer; list-style: none; }
+.purchase-row summary::-webkit-details-marker { display: none; }
+.purchase-row summary::after { content: "›"; font-size: 1.3rem; color: var(--muted); transition: transform .15s; }
+.purchase-row[open] summary::after { transform: rotate(90deg); }
+.purchase-row.is-cancelled summary .num { color: var(--muted); text-decoration: line-through; }
+.purchase-row > .card { box-shadow: none; background: var(--bg); }
 label.inline { display: flex; align-items: center; gap: 6px; margin: 0; }
 label.inline input { width: auto; }
 .kv { display: grid; grid-template-columns: minmax(120px, max-content) 1fr; gap: 6px 16px; margin: 0 0 12px; }
