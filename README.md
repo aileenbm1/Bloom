@@ -32,11 +32,13 @@ Todo se hace en el navegador; no necesitas instalar nada en tu computadora.
    ```bash
    npm run publicar
    ```
-   El comando crea la base D1 (si no existe) y escribe su ID en `wrangler.jsonc`, aplica las migraciones, despliega con un `APP_SECRET` aleatorio, te pide crear el primer administrador (usuario y contraseña, que no se muestran) y comprueba que la URL pública y D1 responden. Al final imprime tu dirección real: `https://bloom-cuentas.TU-SUBDOMINIO.workers.dev/admin/`.
-3. Guarda el ID de la base en el repositorio (el comando te lo recuerda):
-   ```bash
-   git commit -am "Configurar D1" && git push
-   ```
+   El comando despliega (Wrangler crea la base D1 `bloom-db` si no existe), aplica las migraciones, despliega con un `APP_SECRET` aleatorio, te pide crear el primer administrador (usuario y contraseña, que no se muestran) y comprueba que la URL pública y D1 responden. Al final imprime tu dirección real: `https://bloom.TU-SUBDOMINIO.workers.dev/admin/`.
+3. Si Wrangler agregó el `database_id` a `wrangler.jsonc`, guárdalo: `git commit -am "Configurar D1" && git push`.
+
+**Si tu Worker ya está conectado a GitHub (Workers Builds)**, cada cambio en `main` se publica solo. Ajusta una vez en Cloudflare → tu Worker **bloom** → Settings → Build:
+- *Deploy command*: `npm run deploy` (despliega y aplica migraciones).
+- *Non-production branch deploy command*: `npx wrangler versions upload` (el valor por defecto).
+- El primer `npm run publicar` desde Codespaces sigue siendo necesario para crear `APP_SECRET` y el primer administrador; los builds automáticos no hacen esos dos pasos.
 
 **Probar en el codespace antes de publicar (opcional):** `npm run dev`, luego abre el puerto 8787 que ofrece Codespaces y crea un administrador local en otra terminal con `npm run admin:create -- --local --username leilani`.
 
@@ -126,19 +128,14 @@ npx wrangler whoami      # confirma la cuenta
 ```
 Si nunca usaste Workers, entra una vez a https://dash.cloudflare.com → **Workers & Pages** para que Cloudflare te asigne tu subdominio `TU-SUBDOMINIO.workers.dev`.
 
-### 3.5 Crear la base D1
-```bash
-npm run db:create        # = npx wrangler d1 create bloom-db
-```
-Wrangler imprime un bloque con `"database_id": "xxxxxxxx-xxxx-..."`. Si pregunta si quieres que agregue la base a la configuración, responde **No** y haz este paso a mano:
+### 3.5 Base D1
+No hay que crearla a mano ni copiar IDs: en el primer `npm run deploy`, Wrangler busca la base `bloom-db` en tu cuenta y la crea si no existe; después aplica las migraciones.
 
-### 3.6 Configurar el binding
-Abre `wrangler.jsonc` y reemplaza `PENDIENTE-EJECUTA-wrangler-d1-create` por el `database_id` real. El ID no es secreto; puedes subirlo al repositorio. Opcional: escribe el número de WhatsApp de BLOOM en `WHATSAPP_NUMBER` (solo dígitos, ej. `5215512345678`).
+### 3.6 WhatsApp (opcional)
+Escribe el número de WhatsApp de BLOOM en `wrangler.jsonc` → `WHATSAPP_NUMBER` (solo dígitos, ej. `5215512345678`).
 
-### 3.7 Aplicar las migraciones
-```bash
-npm run db:migrate:remote
-```
+### 3.7 Migraciones
+Las aplica `npm run deploy` automáticamente después de desplegar. Si necesitas aplicarlas por separado: `npm run db:migrate:remote`.
 
 ### 3.8 Ejecutar las pruebas
 ```bash
@@ -147,9 +144,9 @@ npm run check
 
 ### 3.9 Desplegar
 ```bash
-npm run deploy
+npm run deploy           # despliega, crea la base D1 si falta y aplica migraciones
 ```
-Al terminar, Wrangler muestra la URL real, por ejemplo `https://bloom-cuentas.TU-SUBDOMINIO.workers.dev`. Esa es tu dirección pública. Hasta completar el paso 3.10 la aplicación muestra "Configuración pendiente" y no muestra datos: es lo esperado.
+Al terminar, Wrangler muestra la URL real, por ejemplo `https://bloom.TU-SUBDOMINIO.workers.dev`. Esa es tu dirección pública. Hasta completar el paso 3.10 la aplicación muestra "Configuración pendiente" y no muestra datos: es lo esperado.
 
 ### 3.10 Configurar el secreto y el primer administrador
 ```bash
@@ -159,7 +156,7 @@ npm run admin:create -- --remote --username leilani --name "Leilani"
 `admin:create` te pide la contraseña sin mostrarla (mínimo 12 caracteres). La convierte en hash PBKDF2-SHA256 en tu computadora y solo envía el hash a D1. Puedes repetir el comando para restablecer una contraseña olvidada o crear otra cuenta. (El secreto se configura después del primer despliegue porque Cloudflare necesita que el Worker exista.)
 
 ### 3.11 Verificar el despliegue
-1. Abre `https://bloom-cuentas.TU-SUBDOMINIO.workers.dev/admin/` e inicia sesión.
+1. Abre `https://bloom.TU-SUBDOMINIO.workers.dev/admin/` e inicia sesión.
 2. Registra un cliente de prueba, una compra y un abono.
 3. Copia su enlace privado y ábrelo en tu teléfono (datos móviles, no wifi) para confirmar el acceso desde Internet.
 4. Ejecuta `npm run deploy` otra vez y recarga: los datos deben seguir ahí (están en D1, no en el navegador).
@@ -242,7 +239,7 @@ Guarda el archivo fuera de la computadora (por ejemplo, en tu nube personal). Co
 npx wrangler d1 create bloom-db-restaurada
 npx wrangler d1 execute bloom-db-restaurada --remote --file backups/bloom-remote-....sql
 ```
-Después cambia en `wrangler.jsonc` `database_name` y `database_id` por los de la base restaurada y ejecuta `npm run deploy`. Los enlaces de las clientas siguen funcionando si no cambiaste `APP_SECRET`.
+Después cambia en `wrangler.jsonc` `database_name` por `bloom-db-restaurada` (y `database_id`, si existe, por el de la base restaurada) y ejecuta `npm run deploy`. Los enlaces de las clientas siguen funcionando si no cambiaste `APP_SECRET`.
 
 Este procedimiento se probó en local (exportar → base vacía → importar → mismo saldo, enlaces y auditoría): ver `e2e/run.mjs`.
 
@@ -257,7 +254,7 @@ npm run test:e2e     # wrangler dev real: reinicio, respaldo/restauración y tel
 
 - **"Configuración pendiente" / error 503 en local:** falta `APP_SECRET` en `.dev.vars`. Arranca con `npm run dev` (lo crea solo) o ejecuta `npm run setup:local`. Si arrancas con `npx wrangler dev` directamente, ese paso no se ejecuta.
 - **"Configuración pendiente" en Cloudflare:** falta el secreto → `npm run secret:set`.
-- **`npm run deploy` dice "Falta el ID real de la base D1":** sigue los pasos 3.5 a 3.7.
+- **El build de Cloudflare falla al crear la base D1 (permisos):** ejecuta una vez `npm run publicar` desde Codespaces; los builds siguientes encuentran la base por su nombre.
 - **Error 1102 o "Worker exceeded resource limits" al iniciar sesión (plan gratuito):** el hash de contraseña usa 100 000 iteraciones y puede rebasar el límite de CPU del plan gratuito. Ejecuta `npm run admin:create -- --remote --username leilani --iterations 50000` (o el plan Workers Paid).
 - **Cambiar APP_SECRET:** los enlaces existentes siguen funcionando para las clientas, pero el panel ya no podrá mostrarlos; usa *Regenerar* y envía el nuevo.
 - **Ver errores en vivo:** `npm run tail` (muestra peticiones en tiempo real, incluidas URL; úsalo solo para depurar).

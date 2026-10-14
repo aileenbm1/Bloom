@@ -1,8 +1,8 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  // Nombre del Worker: forma parte de la URL pública
-  // https://bloom-cuentas.<tu-subdominio>.workers.dev
-  "name": "bloom-cuentas",
+  // Nombre del Worker: debe coincidir con el Worker conectado a GitHub en Cloudflare.
+  // URL pública: https://bloom.<tu-subdominio>.workers.dev
+  "name": "bloom",
   "main": "src/index.ts",
   "compatibility_date": "2026-10-01",
   "workers_dev": true,
@@ -18,9 +18,9 @@
   "d1_databases": [
     {
       "binding": "DB",
+      // Sin "database_id": al desplegar, Wrangler busca la base "bloom-db" en tu cuenta
+      // y la crea si no existe (aprovisionamiento automático). No hay IDs que copiar.
       "database_name": "bloom-db",
-      // Sustituye por el ID real que imprime: npx wrangler d1 create bloom-db
-      "database_id": "PENDIENTE-EJECUTA-wrangler-d1-create",
       "migrations_dir": "migrations"
     }
   ],
