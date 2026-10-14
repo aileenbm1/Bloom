@@ -805,6 +805,59 @@
     );
   }
 
+  const owed = (p) => Math.max(p.total_cents - p.paid_cents, 0);
+  const PURCHASE_BOXES = [
+    ["hechas", "Compras hechas", "No canceladas", (p) => p.status === "active"],
+    ["canceladas", "Compras canceladas", "Ya no suman al saldo", (p) => p.status === "cancelled"],
+    ["apartados", "Sin abono o apartados", "Aún deben algo", (p) => p.status === "active" && owed(p) > 0],
+    ["todas", "Compras", "Todas, incluidas canceladas", () => true],
+  ];
+  const isPhone = () => window.matchMedia("(max-width: 640px)").matches;
+
+  function purchaseGroups(purchases, inRange = () => true) {
+    return PURCHASE_BOXES.map(([key, label, sub, pick]) => {
+      const ps = purchases.filter((p) => pick(p) && inRange(p.purchase_date));
+      const amount = key === "apartados" ? "Deben " + money(ps.reduce((n, p) => n + owed(p), 0)) : money(ps.reduce((n, p) => n + p.total_cents, 0));
+      return { key, label, sub, ps, amount };
+    });
+  }
+
+  function purchaseRow(client, p) {
+    const cancelled = p.status === "cancelled";
+    const pieces = p.items.reduce((n, i) => n + i.quantity, 0);
+    return h(
+      "details",
+      { class: "purchase-row" + (cancelled ? " is-cancelled" : "") },
+      h(
+        "summary",
+        {},
+        h("span", { class: "audit-what" }, h("strong", {}, "Compra del " + fdate(p.purchase_date)), h("span", { class: "muted small" }, pieces + (pieces === 1 ? " prenda" : " prendas") + (cancelled ? " · Cancelada" : owed(p) > 0 ? " · Debe " + money(owed(p)) : " · Pagada"))),
+        h("strong", { class: "num" }, money(p.total_cents)),
+      ),
+      purchaseCard(client, p, true),
+    );
+  }
+
+  function purchaseSection(client, g) {
+    return h(
+      "section",
+      { class: "card purchase-box" },
+      h("div", { class: "purchase-box-head" }, h("h2", {}, g.label, h("span", { class: "muted small" }, " (" + g.ps.length + ")")), h("strong", { class: "num" }, g.amount)),
+      g.ps.length ? g.ps.map((p) => purchaseRow(client, p)) : h("p", { class: "muted" }, "Sin compras."),
+    );
+  }
+
+  // Pantalla propia de un recuadro de compras (la que se abre en el celular).
+  async function viewAuditPurchases(cid, key) {
+    const acct = await api("GET", "/api/admin/clients/" + encodeURIComponent(cid));
+    const g = purchaseGroups(acct.purchases).find((x) => x.key === key);
+    if (!g) {
+      location.hash = "#/auditoria/" + cid;
+      return;
+    }
+    setView(h("p", {}, h("a", { href: "#/auditoria/" + cid }, "← " + acct.client.name)), h("h1", {}, g.label), h("p", { class: "muted" }, g.sub), purchaseSection(acct.client, g));
+  }
+
   async function viewAuditClient(cid) {
     const [d, acct] = await Promise.all([
       api("GET", "/api/admin/audit?limit=500&entity_id=" + encodeURIComponent(cid)),
@@ -812,13 +865,6 @@
     ]);
     const title = cid === "sistema" ? "Sistema" : d.client ? d.client.name : "Cliente eliminado";
     const purchases = acct ? acct.purchases : [];
-    const owed = (p) => Math.max(p.total_cents - p.paid_cents, 0);
-    const BOXES = [
-      ["hechas", "Compras hechas", "No canceladas", (p) => p.status === "active"],
-      ["canceladas", "Compras canceladas", "Ya no suman al saldo", (p) => p.status === "cancelled"],
-      ["apartados", "Sin abono o apartados", "Aún deben algo", (p) => p.status === "active" && owed(p) > 0],
-      ["todas", "Compras", "Todas, incluidas canceladas", () => true],
-    ];
     let open = null;
     const boxes = h("div", {});
     const from = h("input", { type: "date", "aria-label": "Desde" });
@@ -826,27 +872,8 @@
     const clear = h("button", { type: "button", class: "ghost small" }, "Quitar filtro");
     const list = h("div", {});
     const inRange = (k) => (!from.value || k >= from.value) && (!to.value || k <= to.value);
-    const purchaseRow = (p) => {
-      const cancelled = p.status === "cancelled";
-      const pieces = p.items.reduce((n, i) => n + i.quantity, 0);
-      return h(
-        "details",
-        { class: "purchase-row" + (cancelled ? " is-cancelled" : "") },
-        h(
-          "summary",
-          {},
-          h("span", { class: "audit-what" }, h("strong", {}, "Compra del " + fdate(p.purchase_date)), h("span", { class: "muted small" }, pieces + (pieces === 1 ? " prenda" : " prendas") + (cancelled ? " · Cancelada" : owed(p) > 0 ? " · Debe " + money(owed(p)) : " · Pagada"))),
-          h("strong", { class: "num" }, money(p.total_cents)),
-        ),
-        purchaseCard(d.client, p, true),
-      );
-    };
     const renderBoxes = () => {
-      const groups = BOXES.map(([key, label, sub, pick]) => {
-        const ps = purchases.filter((p) => pick(p) && inRange(p.purchase_date));
-        const amount = key === "apartados" ? "Deben " + money(ps.reduce((n, p) => n + owed(p), 0)) : money(ps.reduce((n, p) => n + p.total_cents, 0));
-        return { key, label, sub, ps, amount };
-      });
+      const groups = purchaseGroups(purchases, inRange);
       const grid = h(
         "div",
         { class: "audit-grid" },
@@ -858,6 +885,8 @@
               class: "audit-card" + (open === g.key ? " selected" : ""),
               "aria-expanded": String(open === g.key),
               onclick: () => {
+                // En el celular la lista quedaría fuera de la pantalla: se abre en su propia pantalla.
+                if (isPhone()) return void (location.hash = "#/auditoria/" + cid + "/compras/" + g.key);
                 open = open === g.key ? null : g.key;
                 renderBoxes();
               },
@@ -872,16 +901,7 @@
       const sel = groups.find((g) => g.key === open);
       boxes.replaceChildren(
         grid,
-        ...(sel
-          ? [
-              h(
-                "section",
-                { class: "card purchase-box" },
-                h("div", { class: "purchase-box-head" }, h("h2", {}, sel.label, h("span", { class: "muted small" }, " (" + sel.ps.length + ")")), h("strong", { class: "num" }, sel.amount)),
-                sel.ps.length ? sel.ps.map(purchaseRow) : h("p", { class: "muted" }, "Sin compras."),
-              ),
-            ]
-          : []),
+        ...(sel ? [purchaseSection(d.client, sel)] : []),
       );
     };
     const render = () => {
@@ -1096,8 +1116,9 @@
       else if (hash.startsWith("#/clientes")) await viewClients();
       else if (hash.startsWith("#/cliente/")) await viewClient(hash.slice("#/cliente/".length));
       else if (hash.startsWith("#/auditoria")) {
-        const [cid, eid] = hash.slice("#/auditoria".length).split("/").filter(Boolean).map(decodeURIComponent);
-        if (eid) await viewAuditEntry(cid, eid);
+        const [cid, eid, key] = hash.slice("#/auditoria".length).split("/").filter(Boolean).map(decodeURIComponent);
+        if (eid === "compras" && key) await viewAuditPurchases(cid, key);
+        else if (eid) await viewAuditEntry(cid, eid);
         else if (cid) await viewAuditClient(cid);
         else await viewAudit();
       }
