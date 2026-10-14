@@ -5,13 +5,15 @@
 // Uso:
 //   npm run admin:create -- --remote --username leilani --name "Leilani"
 //   npm run admin:create -- --local  --username admin
+//   npm run admin:create -- --print  --username leilani   (solo muestra el SQL, para pegarlo en la consola D1)
 import { pbkdf2Sync, randomBytes, randomUUID } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DB_NAME, arg, askHidden, target, wrangler } from "./lib.mjs";
 
-const where = target();
+const print = process.argv.includes("--print");
+const where = print ? null : target();
 const username = String(arg("username", "")).trim().toLowerCase();
 const displayName = String(arg("name", username)).trim();
 
@@ -59,6 +61,11 @@ DELETE FROM admin_sessions WHERE admin_id = (SELECT id FROM admins WHERE usernam
 INSERT INTO audit_log (admin_id, action, entity_type, entity_id, details)
 SELECT id, 'admin_configurado_cli', 'admin', id, '{}' FROM admins WHERE username = ${sqlStr(username)};
 `;
+
+if (print) {
+  console.log("\n-- Pega esto en Cloudflare → D1 → bloom-db → Console:\n" + sql);
+  process.exit(0);
+}
 
 const dir = mkdtempSync(join(tmpdir(), "bloom-"));
 const file = join(dir, "admin.sql");

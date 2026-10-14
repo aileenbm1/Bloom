@@ -225,6 +225,32 @@ describe("5-7 · Abonos y saldos", () => {
     expect(actions).toEqual(expect.arrayContaining(["cliente_creado", "compra_registrada", "abono_registrado", "abono_corregido", "abono_anulado"]));
   });
 
+  it("auditoría por cliente: recuadros, historial y detalle de cada operación", async () => {
+    const s = await login();
+    const c = await newClient(s, "Diana Auditoría");
+    await newPurchase(s, c.client.id, [{ description: "Vestido", unit_price: "500" }]);
+    await s.json("POST", `/api/admin/clients/${c.client.id}/payments`, { amount: "200", paid_at: "2026-10-05", method: "tarjeta", note: "Primer pago" });
+
+    const grid = await s.json("GET", "/api/admin/audit/clients");
+    expect(grid.status).toBe(200);
+    const card = grid.data.clients.find((x: any) => x.id === c.client.id);
+    expect(card.entries).toBe(3);
+    expect(grid.data.system.entries).toBeGreaterThan(0); // inicios de sesión
+
+    const hist = await s.json("GET", `/api/admin/audit?entity_id=${c.client.id}`);
+    expect(hist.data.client.name).toBe("Diana Auditoría");
+    const sys = await s.json("GET", "/api/admin/audit?entity_id=sistema");
+    expect(sys.data.entries.every((e: any) => e.entity_type === "admin")).toBe(true);
+
+    const byAction = (a: string) => hist.data.entries.find((e: any) => e.action === a);
+    const buy = await s.json("GET", `/api/admin/audit/entry/${byAction("compra_registrada").id}`);
+    expect(buy.data.client.id).toBe(c.client.id);
+    expect(buy.data.purchase.items[0].description).toBe("Vestido");
+    const pay = await s.json("GET", `/api/admin/audit/entry/${byAction("abono_registrado").id}`);
+    expect(pay.data.payment).toMatchObject({ amount_cents: 20000, method: "tarjeta", note: "Primer pago" });
+    expect((await s.json("GET", "/api/admin/audit/entry/abc")).status).toBe(404);
+  });
+
   it("cancelar compra exige anular antes sus abonos", async () => {
     const s = await login();
     const c = await newClient(s, "Rosa Cancelación");

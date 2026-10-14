@@ -418,21 +418,89 @@ admin.post("/payments/:id/correct", async (c) => {
 
 // --- Auditoría -------------------------------------------------------------------
 
+// Cliente al que pertenece cada registro (NULL = operaciones del sistema: accesos, contraseñas).
+const AUDIT_CLIENT = `CASE WHEN l.entity_type = 'client' THEN l.entity_id ELSE json_extract(l.details, '$.client_id') END`;
+
 admin.get("/audit", async (c) => {
   const limit = Math.min(Number(c.req.query("limit") ?? 100) || 100, 500);
   const entity = c.req.query("entity_id");
-  const stmt = entity && isUuid(entity)
-    ? c.env.DB.prepare(
-        `SELECT l.id, l.created_at, l.action, l.entity_type, l.entity_id, l.details, a.username
-         FROM audit_log l LEFT JOIN admins a ON a.id = l.admin_id
-         WHERE l.entity_id = ?1 OR json_extract(l.details, '$.client_id') = ?1 ORDER BY l.id DESC LIMIT ?2`,
-      ).bind(entity, limit)
-    : c.env.DB.prepare(
-        `SELECT l.id, l.created_at, l.action, l.entity_type, l.entity_id, l.details, a.username
-         FROM audit_log l LEFT JOIN admins a ON a.id = l.admin_id ORDER BY l.id DESC LIMIT ?1`,
-      ).bind(limit);
-  const res = await stmt.all();
+  const db = c.env.DB;
+  const cols = `SELECT l.id, l.created_at, l.action, l.entity_type, l.entity_id, l.details, a.username
+                FROM audit_log l LEFT JOIN admins a ON a.id = l.admin_id`;
+  if (entity === "sistema") {
+    const res = await db.prepare(`${cols} WHERE ${AUDIT_CLIENT} IS NULL ORDER BY l.id DESC LIMIT ?1`).bind(limit).all();
+    return c.json({ client: null, entries: res.results });
+  }
+  if (entity && isUuid(entity)) {
+    const [client, res] = await Promise.all([
+      db.prepare(`SELECT id, name, phone FROM clients WHERE id = ?1`).bind(entity).first(),
+      db.prepare(`${cols} WHERE l.entity_id = ?1 OR json_extract(l.details, '$.client_id') = ?1 ORDER BY l.id DESC LIMIT ?2`).bind(entity, limit).all(),
+    ]);
+    return c.json({ client, entries: res.results });
+  }
+  const res = await db.prepare(`${cols} ORDER BY l.id DESC LIMIT ?1`).bind(limit).all();
   return c.json({ entries: res.results });
+});
+
+/** Un recuadro por cliente con su número de operaciones y la fecha de la última. */
+admin.get("/audit/clients", async (c) => {
+  const db = c.env.DB;
+  const [clients, system] = await db.batch([
+    db.prepare(
+      `WITH x AS (SELECT ${AUDIT_CLIENT} AS cid, l.created_at FROM audit_log l)
+       SELECT c.id, c.name, c.phone, COUNT(x.cid) AS entries, MAX(x.created_at) AS last_at
+       FROM clients c LEFT JOIN x ON x.cid = c.id
+       GROUP BY c.id ORDER BY last_at IS NULL, last_at DESC, c.name COLLATE NOCASE`,
+    ),
+    db.prepare(`SELECT COUNT(*) AS entries, MAX(l.created_at) AS last_at FROM audit_log l WHERE ${AUDIT_CLIENT} IS NULL`),
+  ]);
+  return c.json({ clients: clients.results, system: system.results[0] ?? { entries: 0, last_at: null } });
+});
+
+/** Detalle de una operación, con la compra o el abono al que se refiere. */
+admin.get("/audit/entry/:id", async (c) => {
+  const id = Number(c.req.param("id"));
+  if (!Number.isSafeInteger(id) || id < 1) throw new HttpError(404, "Registro no encontrado");
+  const db = c.env.DB;
+  const entry = await db
+    .prepare(
+      `SELECT l.id, l.created_at, l.action, l.entity_type, l.entity_id, l.details, a.username, a.display_name
+       FROM audit_log l LEFT JOIN admins a ON a.id = l.admin_id WHERE l.id = ?1`,
+    )
+    .bind(id)
+    .first<{ entity_type: string; entity_id: string | null; details: string }>();
+  if (!entry) throw new HttpError(404, "Registro no encontrado");
+  let details: Record<string, unknown> = {};
+  try {
+    details = JSON.parse(entry.details || "{}");
+  } catch {}
+  const clientId = entry.entity_type === "client" ? entry.entity_id : typeof details.client_id === "string" ? details.client_id : null;
+  const client = clientId ? await db.prepare(`SELECT id, name, phone FROM clients WHERE id = ?1`).bind(clientId).first() : null;
+
+  let purchase = null;
+  let payment = null;
+  if (entry.entity_type === "purchase" && entry.entity_id) {
+    const [p, items] = await db.batch([
+      db.prepare(
+        `SELECT id, purchase_date, due_date, subtotal_cents, discount_cents, total_cents, notes, status, cancelled_at, cancel_reason
+         FROM purchases WHERE id = ?1`,
+      ).bind(entry.entity_id),
+      db.prepare(
+        `SELECT description, size, quantity, unit_price_cents, line_total_cents FROM purchase_items WHERE purchase_id = ?1 ORDER BY position`,
+      ).bind(entry.entity_id),
+    ]);
+    if (p.results[0]) purchase = { ...(p.results[0] as object), items: items.results };
+  } else if (entry.entity_type === "payment" && entry.entity_id) {
+    payment = await db
+      .prepare(
+        `SELECT y.id, y.amount_cents, y.paid_at, y.method, y.note, y.status, y.voided_at, y.void_reason,
+                p.purchase_date AS purchase_date, p.total_cents AS purchase_total_cents
+         FROM payments y LEFT JOIN purchases p ON p.id = y.purchase_id WHERE y.id = ?1`,
+      )
+      .bind(entry.entity_id)
+      .first();
+  }
+  return c.json({ entry, client, purchase, payment });
 });
 
 // --- Exportaciones CSV (Excel) -------------------------------------------------

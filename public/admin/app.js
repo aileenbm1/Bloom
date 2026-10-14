@@ -758,14 +758,218 @@
   function auditBox(clientId) {
     const box = h("div", { class: "no-print" }, h("p", { class: "muted" }, "Cargando…"));
     api("GET", "/api/admin/audit?limit=50&entity_id=" + encodeURIComponent(clientId))
-      .then((d) => box.replaceChildren(auditTable(d.entries)))
+      .then((d) => box.replaceChildren(auditTable(d.entries), h("p", {}, h("a", { href: "#/auditoria/" + clientId }, "Ver historial completo por fechas →"))))
       .catch(() => box.replaceChildren(h("p", { class: "muted" }, "No se pudo cargar.")));
     return box;
   }
 
+  // ---------- auditoría: recuadros por cliente → historial por fechas → detalle ----------
+  const dayKeyFmt = new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit" });
+  const dayLongFmt = new Intl.DateTimeFormat("es-MX", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  const timeFmt = new Intl.DateTimeFormat("es-MX", { timeStyle: "short" });
+  const tsDate = (d) => new Date(d.slice(0, 24));
+  const dayKey = (d) => dayKeyFmt.format(tsDate(d));
+  const capital = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+
   async function viewAudit() {
-    const d = await api("GET", "/api/admin/audit?limit=200");
-    setView(h("h1", {}, "Auditoría"), h("p", { class: "muted" }, "Últimas 200 operaciones. Este registro no se puede editar ni borrar."), auditTable(d.entries));
+    const d = await api("GET", "/api/admin/audit/clients");
+    const search = h("input", { type: "search", placeholder: "Buscar cliente", "aria-label": "Buscar cliente" });
+    const grid = h("div", { class: "audit-grid" });
+    const card = (href, title, sub, entries, lastAt) =>
+      h(
+        "a",
+        { class: "audit-card", href },
+        h("strong", {}, title),
+        h("span", { class: "muted small" }, sub),
+        h("span", { class: "audit-count" }, entries + (entries === 1 ? " operación" : " operaciones")),
+        h("span", { class: "muted small" }, lastAt ? "Última: " + fdatetime(lastAt) : "Sin movimientos"),
+      );
+    const render = () => {
+      const q = search.value.trim().toLowerCase();
+      const list = d.clients.filter((c) => !q || c.name.toLowerCase().includes(q) || (c.phone || "").includes(q));
+      grid.replaceChildren(
+        ...list.map((c) => card("#/auditoria/" + c.id, c.name, c.phone || "Sin teléfono", c.entries, c.last_at)),
+        q ? null : card("#/auditoria/sistema", "Sistema", "Accesos y contraseñas", d.system.entries, d.system.last_at),
+      );
+      if (!grid.children.length) grid.append(h("p", { class: "muted" }, "Sin resultados."));
+    };
+    search.addEventListener("input", render);
+    render();
+    setView(
+      h("h1", {}, "Auditoría"),
+      h("p", { class: "muted" }, "Elige un cliente para ver su historial. Este registro no se puede editar ni borrar."),
+      h("div", { class: "toolbar" }, search),
+      grid,
+    );
+  }
+
+  async function viewAuditClient(cid) {
+    const d = await api("GET", "/api/admin/audit?limit=500&entity_id=" + encodeURIComponent(cid));
+    const title = cid === "sistema" ? "Sistema" : d.client ? d.client.name : "Cliente eliminado";
+    const from = h("input", { type: "date", "aria-label": "Desde" });
+    const to = h("input", { type: "date", "aria-label": "Hasta" });
+    const clear = h("button", { type: "button", class: "ghost small" }, "Quitar filtro");
+    const list = h("div", {});
+    const render = () => {
+      const entries = d.entries.filter((e) => {
+        const k = dayKey(e.created_at);
+        return (!from.value || k >= from.value) && (!to.value || k <= to.value);
+      });
+      const days = new Map();
+      for (const e of entries) {
+        const k = dayKey(e.created_at);
+        if (!days.has(k)) days.set(k, []);
+        days.get(k).push(e);
+      }
+      list.replaceChildren(
+        entries.length ? null : h("p", { class: "muted" }, "Sin operaciones en esas fechas."),
+        [...days].map(([, items]) => [
+          h("h2", { class: "audit-day" }, capital(dayLongFmt.format(tsDate(items[0].created_at))), h("span", { class: "muted small" }, " · " + items.length)),
+          h(
+            "div",
+            { class: "card audit-entries" },
+            items.map((e) =>
+              h(
+                "a",
+                { class: "audit-entry", href: "#/auditoria/" + cid + "/" + e.id },
+                h("span", { class: "audit-time" }, timeFmt.format(tsDate(e.created_at))),
+                h("span", { class: "audit-what" }, h("strong", {}, ACTIONS[e.action] || e.action), h("span", { class: "muted small" }, auditDetail(e))),
+                h("span", { class: "muted small hide-sm" }, e.username || "—"),
+                h("span", { class: "audit-go", "aria-hidden": "true" }, "›"),
+              ),
+            ),
+          ),
+        ]),
+      );
+    };
+    [from, to].forEach((i) => i.addEventListener("change", render));
+    clear.addEventListener("click", () => {
+      from.value = to.value = "";
+      render();
+    });
+    render();
+    setView(
+      h("p", {}, h("a", { href: "#/auditoria" }, "← Auditoría")),
+      h("h1", {}, title),
+      d.client ? h("p", {}, h("a", { href: "#/cliente/" + d.client.id }, "Ver cuenta del cliente")) : null,
+      h("div", { class: "toolbar" }, h("label", { class: "inline" }, "Desde ", from), h("label", { class: "inline" }, "Hasta ", to), clear),
+      list,
+    );
+  }
+
+  const FIELD_LABELS = { name: "Nombre", phone: "Teléfono", notes: "Notas" };
+
+  async function viewAuditEntry(cid, eid) {
+    const d = await api("GET", "/api/admin/audit/entry/" + encodeURIComponent(eid));
+    const e = d.entry;
+    let det = {};
+    try {
+      det = JSON.parse(e.details || "{}");
+    } catch {}
+    const row = (k, v) => (v === null || v === undefined || v === "" ? null : [h("dt", {}, k), h("dd", {}, v)]);
+    const sections = [];
+
+    if (e.action === "cliente_editado" && det.before && det.after) {
+      const changed = Object.keys(FIELD_LABELS).filter((k) => (det.before[k] || "") !== (det.after[k] || ""));
+      sections.push(
+        h("h2", {}, "Cambios"),
+        changed.length
+          ? h(
+              "div",
+              { class: "card table-scroll" },
+              h(
+                "table",
+                {},
+                h("thead", {}, h("tr", {}, h("th", {}, "Dato"), h("th", {}, "Antes"), h("th", {}, "Después"))),
+                h("tbody", {}, changed.map((k) => h("tr", {}, h("td", {}, FIELD_LABELS[k]), h("td", {}, det.before[k] || "—"), h("td", {}, det.after[k] || "—")))),
+              ),
+            )
+          : h("p", { class: "muted" }, "Se guardó sin cambios."),
+      );
+    }
+
+    if (d.purchase) {
+      const p = d.purchase;
+      sections.push(
+        h("h2", {}, "Compra"),
+        h(
+          "div",
+          { class: "card" },
+          h(
+            "dl",
+            { class: "kv" },
+            row("Fecha de compra", fdate(p.purchase_date)),
+            row("Fecha límite", p.due_date ? fdate(p.due_date) : null),
+            row("Estado actual", p.status === "cancelled" ? "Cancelada" : "Activa"),
+            row("Motivo de cancelación", p.cancel_reason),
+            row("Notas", p.notes),
+          ),
+          h(
+            "div",
+            { class: "table-scroll" },
+            h(
+              "table",
+              {},
+              h("thead", {}, h("tr", {}, h("th", {}, "Prenda"), h("th", {}, "Talla"), h("th", { class: "num" }, "Cant."), h("th", { class: "num" }, "Precio"), h("th", { class: "num" }, "Importe"))),
+              h(
+                "tbody",
+                {},
+                p.items.map((it) =>
+                  h("tr", {}, h("td", {}, it.description), h("td", {}, it.size || "—"), h("td", { class: "num" }, it.quantity), h("td", { class: "num" }, money(it.unit_price_cents)), h("td", { class: "num" }, money(it.line_total_cents))),
+                ),
+              ),
+            ),
+          ),
+          h("dl", { class: "kv" }, row("Subtotal", money(p.subtotal_cents)), p.discount_cents ? row("Descuento", "− " + money(p.discount_cents)) : null, row("Total", h("strong", {}, money(p.total_cents)))),
+        ),
+      );
+    }
+
+    if (d.payment) {
+      const y = d.payment;
+      sections.push(
+        h("h2", {}, "Abono"),
+        h(
+          "div",
+          { class: "card" },
+          h(
+            "dl",
+            { class: "kv" },
+            row("Importe", h("strong", {}, money(y.amount_cents))),
+            row("Fecha del pago", fdate(y.paid_at)),
+            row("Forma de pago", methodLabel(y.method)),
+            row("Aplicado a", y.purchase_date ? "Compra del " + fdate(y.purchase_date) + " (" + money(y.purchase_total_cents) + ")" : "Saldo general"),
+            row("Nota", y.note),
+            row("Estado actual", y.status === "voided" ? "Anulado" : "Válido"),
+            row("Motivo de anulación", y.void_reason),
+          ),
+        ),
+      );
+    }
+
+    setView(
+      h("p", {}, h("a", { href: "#/auditoria/" + cid }, "← Historial")),
+      h("h1", {}, ACTIONS[e.action] || e.action),
+      h(
+        "div",
+        { class: "card" },
+        h(
+          "dl",
+          { class: "kv" },
+          row("Fecha", capital(dayLongFmt.format(tsDate(e.created_at)))),
+          row("Hora", timeFmt.format(tsDate(e.created_at))),
+          row("Cliente", d.client ? h("a", { href: "#/cliente/" + d.client.id }, d.client.name) : null),
+          row("Realizado por", e.display_name ? e.display_name + " (" + e.username + ")" : e.username || "—"),
+          row("Importe anterior", det.old_amount_cents !== undefined ? money(det.old_amount_cents) : null),
+          row("Importe nuevo", det.new_amount_cents !== undefined ? money(det.new_amount_cents) : null),
+          row("Motivo", det.reason),
+          row("Usuario intentado", e.action === "login_fallido" ? det.username : null),
+          row("Nombre registrado", e.action === "cliente_creado" ? det.name : null),
+          row("Teléfono registrado", e.action === "cliente_creado" ? det.phone : null),
+        ),
+      ),
+      sections,
+    );
   }
 
   function viewAccount() {
@@ -814,7 +1018,12 @@
       if (hash === "#/" || hash === "#") await viewDashboard();
       else if (hash.startsWith("#/clientes")) await viewClients();
       else if (hash.startsWith("#/cliente/")) await viewClient(hash.slice("#/cliente/".length));
-      else if (hash.startsWith("#/auditoria")) await viewAudit();
+      else if (hash.startsWith("#/auditoria")) {
+        const [cid, eid] = hash.slice("#/auditoria".length).split("/").filter(Boolean).map(decodeURIComponent);
+        if (eid) await viewAuditEntry(cid, eid);
+        else if (cid) await viewAuditClient(cid);
+        else await viewAudit();
+      }
       else if (hash.startsWith("#/cuenta")) viewAccount();
       else location.hash = "#/";
     } catch (e) {
