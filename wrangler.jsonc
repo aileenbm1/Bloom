@@ -1,0 +1,40 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  // Nombre del Worker: debe coincidir con el Worker conectado a GitHub en Cloudflare.
+  // URL pública: https://bloom.<tu-subdominio>.workers.dev
+  "name": "bloom",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": true,
+  "preview_urls": false,
+
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    // El Worker procesa primero cada petición para aplicar encabezados de seguridad.
+    "run_worker_first": true
+  },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      // Sin "database_id": al desplegar, Wrangler busca la base "bloom-db" en tu cuenta
+      // y la crea si no existe (aprovisionamiento automático). No hay IDs que copiar.
+      "database_name": "bloom-db",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  "vars": {
+    "BUSINESS_NAME": "BLOOM",
+    // Número de WhatsApp de BLOOM en formato internacional, solo dígitos (ej. 52 + 10 dígitos).
+    "WHATSAPP_NUMBER": ""
+  },
+
+  // Limpieza diaria de sesiones vencidas y contadores de intentos.
+  "triggers": { "crons": ["15 9 * * *"] },
+
+  // Los registros de invocación incluyen la URL completa; se desactivan para
+  // que los enlaces privados (/cuenta/TOKEN) no queden guardados en logs.
+  "observability": { "enabled": false }
+}

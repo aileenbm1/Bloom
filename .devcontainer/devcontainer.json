@@ -1,0 +1,21 @@
+{
+  "name": "BLOOM · Cloudflare Workers",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:1-22-bookworm",
+  "postCreateCommand": "npm install",
+  "forwardPorts": [8787],
+  "portsAttributes": {
+    "8787": { "label": "BLOOM (npm run dev)", "onAutoForward": "notify" }
+  },
+  "containerEnv": { "WRANGLER_SEND_METRICS": "false" },
+  // Secretos de Codespaces (GitHub → Settings → Codespaces → Secrets). Nunca se guardan en el repositorio.
+  "secrets": {
+    "CLOUDFLARE_API_TOKEN": {
+      "description": "API Token de Cloudflare con permisos Workers Scripts: Edit y D1: Edit (ver README, sección Codespaces).",
+      "documentationUrl": "https://developers.cloudflare.com/fundamentals/api/get-started/create-token/"
+    },
+    "CLOUDFLARE_ACCOUNT_ID": {
+      "description": "ID de tu cuenta de Cloudflare (panel de Cloudflare → Workers & Pages → Account ID).",
+      "documentationUrl": "https://developers.cloudflare.com/fundamentals/account/find-account-and-zone-ids/"
+    }
+  }
+}

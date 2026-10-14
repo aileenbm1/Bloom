@@ -1,0 +1,3 @@
+# Copia a .dev.vars (o ejecuta `npm run setup:local`, que lo crea con un valor aleatorio).
+# Solo para desarrollo local. No subas .dev.vars al repositorio.
+APP_SECRET=reemplaza-con-al-menos-32-caracteres-aleatorios
