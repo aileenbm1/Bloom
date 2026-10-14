@@ -787,10 +787,8 @@
     const render = () => {
       const q = search.value.trim().toLowerCase();
       const list = d.clients.filter((c) => !q || c.name.toLowerCase().includes(q) || (c.phone || "").includes(q));
-      grid.replaceChildren(
-        ...list.map((c) => card("#/auditoria/" + c.id, c.name, c.phone || "Sin teléfono", c.entries, c.last_at)),
-        q ? null : card("#/auditoria/sistema", "Sistema", "Accesos y contraseñas", d.system.entries, d.system.last_at),
-      );
+      grid.replaceChildren(...list.map((c) => card("#/auditoria/" + c.id, c.name, c.phone || "Sin teléfono", c.entries, c.last_at)));
+      if (!q) grid.append(card("#/auditoria/sistema", "Sistema", "Accesos y contraseñas", d.system.entries, d.system.last_at));
       if (!grid.children.length) grid.append(h("p", { class: "muted" }, "Sin resultados."));
     };
     search.addEventListener("input", render);
@@ -821,9 +819,9 @@
         if (!days.has(k)) days.set(k, []);
         days.get(k).push(e);
       }
+      if (!entries.length) return list.replaceChildren(h("p", { class: "muted" }, "Sin operaciones en esas fechas."));
       list.replaceChildren(
-        entries.length ? null : h("p", { class: "muted" }, "Sin operaciones en esas fechas."),
-        [...days].map(([, items]) => [
+        ...[...days].flatMap(([, items]) => [
           h("h2", { class: "audit-day" }, capital(dayLongFmt.format(tsDate(items[0].created_at))), h("span", { class: "muted small" }, " · " + items.length)),
           h(
             "div",
