@@ -812,11 +812,14 @@
     ]);
     const title = cid === "sistema" ? "Sistema" : d.client ? d.client.name : "Cliente eliminado";
     const purchases = acct ? acct.purchases : [];
+    const owed = (p) => Math.max(p.total_cents - p.paid_cents, 0);
     const BOXES = [
-      ["Compras realizadas", (p) => p.status === "active"],
-      ["Compras canceladas", (p) => p.status === "cancelled"],
-      ["Todas las compras", () => true],
+      ["hechas", "Compras hechas", "No canceladas", (p) => p.status === "active"],
+      ["canceladas", "Compras canceladas", "Ya no suman al saldo", (p) => p.status === "cancelled"],
+      ["apartados", "Sin abono o apartados", "Aún deben algo", (p) => p.status === "active" && owed(p) > 0],
+      ["todas", "Compras", "Todas, incluidas canceladas", () => true],
     ];
+    let open = null;
     const boxes = h("div", {});
     const from = h("input", { type: "date", "aria-label": "Desde" });
     const to = h("input", { type: "date", "aria-label": "Hasta" });
@@ -832,24 +835,53 @@
         h(
           "summary",
           {},
-          h("span", { class: "audit-what" }, h("strong", {}, "Compra del " + fdate(p.purchase_date)), h("span", { class: "muted small" }, pieces + (pieces === 1 ? " prenda" : " prendas") + (cancelled ? " · Cancelada" : ""))),
+          h("span", { class: "audit-what" }, h("strong", {}, "Compra del " + fdate(p.purchase_date)), h("span", { class: "muted small" }, pieces + (pieces === 1 ? " prenda" : " prendas") + (cancelled ? " · Cancelada" : owed(p) > 0 ? " · Debe " + money(owed(p)) : " · Pagada"))),
           h("strong", { class: "num" }, money(p.total_cents)),
         ),
         purchaseCard(d.client, p, true),
       );
     };
     const renderBoxes = () => {
+      const groups = BOXES.map(([key, label, sub, pick]) => {
+        const ps = purchases.filter((p) => pick(p) && inRange(p.purchase_date));
+        const amount = key === "apartados" ? "Deben " + money(ps.reduce((n, p) => n + owed(p), 0)) : money(ps.reduce((n, p) => n + p.total_cents, 0));
+        return { key, label, sub, ps, amount };
+      });
+      const grid = h(
+        "div",
+        { class: "audit-grid" },
+        groups.map((g) =>
+          h(
+            "button",
+            {
+              type: "button",
+              class: "audit-card" + (open === g.key ? " selected" : ""),
+              "aria-expanded": String(open === g.key),
+              onclick: () => {
+                open = open === g.key ? null : g.key;
+                renderBoxes();
+              },
+            },
+            h("strong", {}, g.label),
+            h("span", { class: "muted small" }, g.sub),
+            h("span", { class: "audit-count" }, g.ps.length + (g.ps.length === 1 ? " compra" : " compras")),
+            h("span", { class: "muted small" }, g.amount),
+          ),
+        ),
+      );
+      const sel = groups.find((g) => g.key === open);
       boxes.replaceChildren(
-        ...BOXES.map(([label, pick]) => {
-          const ps = purchases.filter((p) => pick(p) && inRange(p.purchase_date));
-          const total = ps.reduce((sum, p) => sum + p.total_cents, 0);
-          return h(
-            "section",
-            { class: "card purchase-box" },
-            h("div", { class: "purchase-box-head" }, h("h2", {}, label, h("span", { class: "muted small" }, " (" + ps.length + ")")), h("strong", { class: "num" }, money(total))),
-            ps.length ? ps.map(purchaseRow) : h("p", { class: "muted" }, "Sin compras."),
-          );
-        }),
+        grid,
+        ...(sel
+          ? [
+              h(
+                "section",
+                { class: "card purchase-box" },
+                h("div", { class: "purchase-box-head" }, h("h2", {}, sel.label, h("span", { class: "muted small" }, " (" + sel.ps.length + ")")), h("strong", { class: "num" }, sel.amount)),
+                sel.ps.length ? sel.ps.map(purchaseRow) : h("p", { class: "muted" }, "Sin compras."),
+              ),
+            ]
+          : []),
       );
     };
     const render = () => {
