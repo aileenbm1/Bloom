@@ -97,7 +97,7 @@ Ejecuta los comandos en una terminal dentro de la carpeta `bloom` (en Windows: P
 
 ### 3.1 Comprobar Node.js y npm
 ```bash
-node -v    # debe ser v20 o superior
+node -v    # debe ser v22 o superior (lo exige Wrangler 4)
 npm -v
 ```
 Si no los tienes, instala la versión LTS desde https://nodejs.org.
