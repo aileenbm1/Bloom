@@ -44,6 +44,15 @@ Todo se hace en el navegador; no necesitas instalar nada en tu computadora.
 
 Si prefieres trabajar desde tu computadora, sigue la sección 3.
 
+## 0A. Publicar con GitHub conectado a Cloudflare (sin terminal)
+
+Si tu repositorio ya está conectado al Worker `bloom` en Cloudflare (Workers Builds), todo se hace desde el navegador:
+
+1. **Secreto.** Cloudflare → Workers y Pages → `bloom` → Settings → Variables and Secrets → Add. Tipo **Secret**, nombre `APP_SECRET`, valor: una cadena aleatoria de al menos 32 caracteres. Para generarla, abre la consola del navegador (F12 → Console) y escribe `crypto.randomUUID() + crypto.randomUUID()`. Guarda ese valor en tu gestor de contraseñas; no lo compartas.
+2. **Comando de despliegue.** `bloom` → Settings → Build → Deploy command: `npm run deploy` (despliega y aplica las migraciones de la base D1 `bloom-db`).
+3. **Desplegar.** Haz un cambio o un *merge* en la rama `main` (o usa *Retry build*) y espera a que la compilación termine en verde.
+4. **Primer administrador.** Abre `https://bloom.<tu-subdominio>.workers.dev/admin/`. Mientras no exista ningún administrador verás **Crear primer administrador**: escribe como código de configuración el mismo valor de `APP_SECRET`, tu usuario y una contraseña de 12 caracteres o más. Esta pantalla desaparece en cuanto se crea el primero.
+
 ## 1. Qué incluye
 
 **Panel administrativo** (`/admin/`)

@@ -62,7 +62,7 @@ export const requireSecret: MiddlewareHandler<AppEnv> = async (c, next) => {
   const local = ["localhost", "127.0.0.1"].includes(new URL(c.req.url).hostname);
   const fix = local
     ? "Falta APP_SECRET en el entorno local. Detén el servidor y ejecuta: npm run setup:local  (o simplemente npm run dev, que lo hace automáticamente)."
-    : "Falta el secreto APP_SECRET en Cloudflare. Ejecuta: npm run secret:set";
+    : "Falta el secreto APP_SECRET en Cloudflare. En el panel de Cloudflare abre Workers y Pages → este Worker → Settings → Variables and Secrets → Add, elige el tipo Secret, nombre APP_SECRET y un valor aleatorio de al menos 32 caracteres. Guarda y recarga esta página.";
   console.error(JSON.stringify({ level: "error", message: "APP_SECRET ausente o demasiado corto" }));
   if (new URL(c.req.url).pathname.startsWith("/api/")) {
     return c.json({ error: "Configuración incompleta del servidor. " + fix }, 503);

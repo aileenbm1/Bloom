@@ -168,7 +168,52 @@
   }
 
   // ---------- autenticación ----------
-  function renderLogin(message) {
+  async function renderLogin(message) {
+    topbar.hidden = true;
+    try {
+      const s = await api("GET", "/api/auth/setup");
+      if (s.needed) return renderSetup();
+    } catch {}
+    renderLoginForm(message);
+  }
+
+  // Solo aparece mientras no existe ningún administrador.
+  function renderSetup() {
+    topbar.hidden = true;
+    const err = errorBox();
+    const form = h(
+      "form",
+      { class: "card", autocomplete: "off" },
+      h("div", { class: "logo" }, "BLOOM"),
+      h("h2", {}, "Crear primer administrador"),
+      h("p", { class: "muted" }, "Este paso se hace una sola vez. El código de configuración es el mismo valor que guardaste como APP_SECRET en Cloudflare."),
+      h("div", { class: "field" }, h("label", { for: "sc" }, "Código de configuración (APP_SECRET)"), h("input", { id: "sc", name: "setup_code", type: "password", required: true, autocomplete: "off" })),
+      h("div", { class: "field" }, h("label", { for: "su" }, "Usuario"), h("input", { id: "su", name: "username", required: true, autocomplete: "username", autocapitalize: "none" })),
+      h("div", { class: "field" }, h("label", { for: "sn" }, "Nombre"), h("input", { id: "sn", name: "display_name", autocomplete: "name" })),
+      h("div", { class: "field" }, h("label", { for: "sp" }, "Contraseña (mínimo 12 caracteres)"), h("input", { id: "sp", name: "password", type: "password", required: true, minlength: "12", autocomplete: "new-password" })),
+      h("div", { class: "field" }, h("label", { for: "sp2" }, "Repetir contraseña"), h("input", { id: "sp2", name: "password2", type: "password", required: true, minlength: "12", autocomplete: "new-password" })),
+      err,
+      h("button", { type: "submit" }, "Crear administrador"),
+    );
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const data = formData(form);
+      if (data.password !== data.password2) return showError(err, { message: "Las contraseñas no coinciden." });
+      delete data.password2;
+      submitting(form, async () => {
+        try {
+          await api("POST", "/api/auth/setup", data);
+          renderLoginForm("Administrador creado. Ya puedes iniciar sesión.");
+        } catch (e2) {
+          showError(err, e2);
+        }
+      });
+    });
+    setView(h("div", { class: "login" }, form));
+    form.querySelector("input").focus();
+  }
+
+  function renderLoginForm(message) {
     topbar.hidden = true;
     const err = errorBox();
     if (message) showError(err, { message });
