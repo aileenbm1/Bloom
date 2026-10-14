@@ -653,7 +653,7 @@
     }
   }
 
-  function purchaseCard(c, p) {
+  function purchaseCard(c, p, readonly = false) {
     const cancelled = p.status === "cancelled";
     return h(
       "article",
@@ -688,7 +688,11 @@
         ),
       ),
       p.notes ? h("p", { class: "muted small" }, p.notes) : null,
-      cancelled ? h("p", { class: "muted small" }, "Cancelada: " + (p.cancel_reason || "")) : h("div", { class: "actions no-print" }, h("button", { type: "button", class: "danger small", onclick: () => cancelPurchase(p) }, "Cancelar compra")),
+      cancelled
+        ? h("p", { class: "muted small" }, "Cancelada" + (p.cancelled_at ? " el " + fdatetime(p.cancelled_at) : "") + ": " + (p.cancel_reason || ""))
+        : readonly
+          ? null
+          : h("div", { class: "actions no-print" }, h("button", { type: "button", class: "danger small", onclick: () => cancelPurchase(p) }, "Cancelar compra")),
     );
   }
 
@@ -802,13 +806,54 @@
   }
 
   async function viewAuditClient(cid) {
-    const d = await api("GET", "/api/admin/audit?limit=500&entity_id=" + encodeURIComponent(cid));
+    const [d, acct] = await Promise.all([
+      api("GET", "/api/admin/audit?limit=500&entity_id=" + encodeURIComponent(cid)),
+      cid === "sistema" ? null : api("GET", "/api/admin/clients/" + encodeURIComponent(cid)).catch(() => null),
+    ]);
     const title = cid === "sistema" ? "Sistema" : d.client ? d.client.name : "Cliente eliminado";
+    const purchases = acct ? acct.purchases : [];
+    const TABS = [
+      ["historial", "Historial", null],
+      ["realizadas", "Compras realizadas", (p) => p.status === "active"],
+      ["canceladas", "Compras canceladas", (p) => p.status === "cancelled"],
+      ["todas", "Todas las compras", () => true],
+    ];
+    let tab = "historial";
+    const tabBar = h("div", { class: "tabs", role: "tablist" });
     const from = h("input", { type: "date", "aria-label": "Desde" });
     const to = h("input", { type: "date", "aria-label": "Hasta" });
     const clear = h("button", { type: "button", class: "ghost small" }, "Quitar filtro");
     const list = h("div", {});
+    const inRange = (k) => (!from.value || k >= from.value) && (!to.value || k <= to.value);
+    const renderPurchases = (pick) => {
+      const ps = purchases.filter((p) => pick(p) && inRange(p.purchase_date));
+      const total = ps.reduce((sum, p) => sum + p.total_cents, 0);
+      list.replaceChildren(
+        h("p", { class: "muted" }, ps.length + (ps.length === 1 ? " compra" : " compras") + " · " + money(total)),
+        ...(ps.length ? ps.map((p) => purchaseCard(d.client, p, true)) : [h("p", { class: "muted" }, "Sin compras en esta sección.")]),
+      );
+    };
     const render = () => {
+      tabBar.replaceChildren(
+        ...TABS.filter(([, , pick]) => !pick || acct).map(([key, label, pick]) =>
+          h(
+            "button",
+            {
+              type: "button",
+              role: "tab",
+              "aria-selected": String(key === tab),
+              class: key === tab ? "small" : "secondary small",
+              onclick: () => {
+                tab = key;
+                render();
+              },
+            },
+            label + (pick ? " (" + purchases.filter(pick).length + ")" : ""),
+          ),
+        ),
+      );
+      const current = TABS.find(([key]) => key === tab);
+      if (current[2]) return renderPurchases(current[2]);
       const entries = d.entries.filter((e) => {
         const k = dayKey(e.created_at);
         return (!from.value || k >= from.value) && (!to.value || k <= to.value);
@@ -850,6 +895,7 @@
       h("p", {}, h("a", { href: "#/auditoria" }, "← Auditoría")),
       h("h1", {}, title),
       d.client ? h("p", {}, h("a", { href: "#/cliente/" + d.client.id }, "Ver cuenta del cliente")) : null,
+      tabBar,
       h("div", { class: "toolbar" }, h("label", { class: "inline" }, "Desde ", from), h("label", { class: "inline" }, "Hasta ", to), clear),
       list,
     );

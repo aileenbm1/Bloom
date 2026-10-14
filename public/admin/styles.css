@@ -114,6 +114,7 @@ tr.voided td.keep, tr.cancelled td.keep { text-decoration: none; }
 .audit-what { flex: 1; min-width: 0; }
 .audit-what strong, .audit-what span { display: block; overflow-wrap: anywhere; }
 .audit-go { font-size: 1.4rem; color: var(--muted); }
+.tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 4px; }
 label.inline { display: flex; align-items: center; gap: 6px; margin: 0; }
 label.inline input { width: auto; }
 .kv { display: grid; grid-template-columns: minmax(120px, max-content) 1fr; gap: 6px 16px; margin: 0 0 12px; }
