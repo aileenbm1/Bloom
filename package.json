@@ -15,8 +15,7 @@
     "db:migrate:remote": "wrangler d1 migrations apply bloom-db --remote",
     "admin:create": "node scripts/create-admin.mjs",
     "secret:set": "node scripts/set-secret.mjs",
-    "predeploy": "npm run typecheck",
-    "deploy": "wrangler deploy && wrangler d1 migrations apply bloom-db --remote",
+    "deploy": "node scripts/deploy.mjs",
     "backup": "node scripts/backup.mjs",
     "tail": "wrangler tail",
     "publicar": "node scripts/publish.mjs"

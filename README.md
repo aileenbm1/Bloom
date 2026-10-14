@@ -36,9 +36,9 @@ Todo se hace en el navegador; no necesitas instalar nada en tu computadora.
 3. Si Wrangler agregó el `database_id` a `wrangler.jsonc`, guárdalo: `git commit -am "Configurar D1" && git push`.
 
 **Si tu Worker ya está conectado a GitHub (Workers Builds)**, cada cambio en `main` se publica solo. Ajusta una vez en Cloudflare → tu Worker **bloom** → Settings → Build:
-- *Deploy command*: `npm run deploy` (despliega y aplica migraciones).
+- *Deploy command*: `npm run deploy`. Despliega, aplica las migraciones de D1 y, si el Worker aún no tiene `APP_SECRET`, genera uno aleatorio y lo guarda como secreto cifrado de Cloudflare (nunca se muestra ni se sube al repositorio). Si ya existe, no lo cambia.
 - *Non-production branch deploy command*: `npx wrangler versions upload` (el valor por defecto).
-- El primer `npm run publicar` desde Codespaces sigue siendo necesario para crear `APP_SECRET` y el primer administrador; los builds automáticos no hacen esos dos pasos.
+- El primer administrador se crea aparte (con `npm run admin:create -- --remote` o desde la consola de D1).
 
 **Probar en el codespace antes de publicar (opcional):** `npm run dev`, luego abre el puerto 8787 que ofrece Codespaces y crea un administrador local en otra terminal con `npm run admin:create -- --local --username leilani`.
 
