@@ -1,16 +1,17 @@
 :root {
-  --bg: #fbf7f6; --surface: #fff; --ink: #2b2226; --muted: #7a6a70; --line: #eadfe0;
-  --brand: #b44a6a; --brand-soft: #f7e3e9; --ok: #2f7d55; --ok-soft: #e3f3ea;
+  /* Colores tomados del logo */
+  --bg: #e9e5e4; --surface: #fff; --ink: #2f2738; --muted: #675d70; --line: #ddd6dc;
+  --brand: #5b4a7a; --brand-soft: #ece7f3; --gold: #b39b7c; --ok: #2f7d55; --ok-soft: #e3f3ea;
   --warn: #a55a00; --warn-soft: #fbeedc; --danger: #b3261e; --danger-soft: #fbe5e3;
   color-scheme: light;
 }
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
 body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; }
-.brand { background: var(--surface); border-bottom: 1px solid var(--line); padding: 14px 16px; text-align: center; }
-.logo { font-weight: 800; letter-spacing: .3em; color: var(--brand); font-size: 1.3rem; }
+.brand { background: var(--bg); border-bottom: 1px solid var(--gold); padding: 12px 16px; text-align: center; line-height: 0; }
+.logo { height: 40px; width: auto; }
 .wrap { max-width: 720px; margin: 0 auto; padding: 16px; }
-h1 { font-size: 1.6rem; margin: 0 0 8px; }
+h1 { font-size: 1.6rem; margin: 0 0 8px; color: var(--brand); }
 h2 { font-size: 1.1rem; margin: 28px 0 10px; }
 .muted { color: var(--muted); }
 .small { font-size: .85rem; }
@@ -23,7 +24,7 @@ h2 { font-size: 1.1rem; margin: 28px 0 10px; }
 .tile { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
 .tile span { display: block; color: var(--muted); font-size: .85rem; }
 .tile strong { display: block; font-size: 1.2rem; font-variant-numeric: tabular-nums; }
-.tile.main { background: var(--brand); border-color: var(--brand); color: #fff; grid-column: 1 / -1; text-align: center; }
+.tile.main { background: var(--brand); border-color: var(--brand); border-bottom: 3px solid var(--gold); color: #fff; grid-column: 1 / -1; text-align: center; }
 .tile.main span { color: rgba(255,255,255,.85); }
 .tile.main strong { font-size: 1.8rem; }
 .tile.late { background: var(--danger-soft); border-color: var(--danger-soft); color: var(--danger); }

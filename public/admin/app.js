@@ -175,7 +175,6 @@
     const form = h(
       "form",
       { class: "card", autocomplete: "on" },
-      h("div", { class: "logo" }, "BLOOM"),
       h("p", { class: "muted", style: null }, "Control de pagos · Acceso administrativo"),
       h("div", { class: "field" }, h("label", { for: "u" }, "Usuario"), h("input", { id: "u", name: "username", required: true, autocomplete: "username", autocapitalize: "none" })),
       h("div", { class: "field" }, h("label", { for: "p" }, "Contraseña"), h("input", { id: "p", name: "password", type: "password", required: true, autocomplete: "current-password" })),
@@ -196,7 +195,7 @@
         }
       });
     });
-    setView(h("div", { class: "login" }, form));
+    setView(h("div", { class: "login" }, h("img", { class: "logo", src: "/logo.png", alt: "BLOOM · A tu manera", width: 280, height: 216 }), form));
     form.querySelector("input").focus();
   }
 

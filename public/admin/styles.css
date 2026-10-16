@@ -1,12 +1,14 @@
 :root {
-  --bg: #fbf7f6;
+  /* Colores tomados del logo */
+  --bg: #e9e5e4;
   --surface: #ffffff;
-  --ink: #2b2226;
-  --muted: #7a6a70;
-  --line: #eadfe0;
-  --brand: #b44a6a;
+  --ink: #2f2738;
+  --muted: #675d70;
+  --line: #ddd6dc;
+  --brand: #5b4a7a;
   --brand-ink: #ffffff;
-  --brand-soft: #f7e3e9;
+  --brand-soft: #ece7f3;
+  --gold: #b39b7c;
   --ok: #2f7d55;
   --ok-soft: #e3f3ea;
   --warn: #a55a00;
@@ -14,7 +16,7 @@
   --danger: #b3261e;
   --danger-soft: #fbe5e3;
   --radius: 12px;
-  --shadow: 0 1px 2px rgba(43, 34, 38, .06), 0 4px 16px rgba(43, 34, 38, .05);
+  --shadow: 0 1px 2px rgba(47, 39, 56, .06), 0 4px 16px rgba(47, 39, 56, .05);
   color-scheme: light;
 }
 
@@ -27,7 +29,7 @@ body {
   font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 h1, h2, h3 { line-height: 1.2; margin: 0 0 .6rem; }
-h1 { font-size: 1.5rem; }
+h1 { font-size: 1.5rem; color: var(--brand); }
 h2 { font-size: 1.15rem; margin-top: 1.6rem; }
 h3 { font-size: 1rem; }
 a { color: var(--brand); }
@@ -40,9 +42,10 @@ a { color: var(--brand); }
 .topbar {
   position: sticky; top: 0; z-index: 5;
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-  padding: 10px 16px; background: var(--surface); border-bottom: 1px solid var(--line);
+  padding: 10px 16px; background: var(--bg); border-bottom: 1px solid var(--gold);
 }
-.topbar .logo { font-weight: 800; letter-spacing: .18em; color: var(--brand); text-decoration: none; }
+.topbar .logo { display: block; line-height: 0; }
+.topbar .logo img { height: 32px; width: auto; }
 .topbar nav { display: flex; gap: 4px; flex: 1; overflow-x: auto; }
 .topbar nav a { padding: 6px 10px; border-radius: 8px; color: var(--ink); text-decoration: none; white-space: nowrap; }
 .topbar nav a.active { background: var(--brand-soft); color: var(--brand); font-weight: 600; }
@@ -52,7 +55,7 @@ a { color: var(--brand); }
 .tile { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; }
 .tile span { display: block; color: var(--muted); font-size: .85rem; }
 .tile strong { display: block; font-size: 1.35rem; font-variant-numeric: tabular-nums; }
-.tile.main { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); }
+.tile.main { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); border-bottom: 3px solid var(--gold); }
 .tile.main span { color: rgba(255,255,255,.85); }
 
 button, .btn {
@@ -139,12 +142,13 @@ label.inline input { width: auto; }
 .item-row button { min-height: 40px; padding: 0; }
 
 dialog { border: none; border-radius: var(--radius); padding: 18px; width: min(480px, calc(100vw - 32px)); box-shadow: 0 10px 40px rgba(0,0,0,.25); }
-dialog::backdrop { background: rgba(43, 34, 38, .4); }
+dialog::backdrop { background: rgba(47, 39, 56, .4); }
 
 .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 10px 16px; border-radius: 10px; z-index: 20; max-width: calc(100vw - 32px); }
 
 .login { max-width: 380px; margin: 10vh auto; }
-.login .logo { font-size: 2rem; font-weight: 800; letter-spacing: .25em; color: var(--brand); text-align: center; margin-bottom: 4px; }
+.login .logo { display: block; width: min(280px, 80%); height: auto; margin: 0 auto 16px; }
+.login .card { border-top: 3px solid var(--gold); }
 
 .print-only { display: none; }
 

@@ -120,7 +120,7 @@ function page(c: Context<AppEnv>, status: number, title: string, content: string
 <link rel="stylesheet" href="/portal.css">
 </head>
 <body>
-<header class="brand"><span class="logo">${brand}</span></header>
+<header class="brand"><img class="logo" src="/logo-wordmark.png" alt="${brand}" width="161" height="40"></header>
 <main class="wrap">${content}</main>
 <script src="/portal.js"></script>
 </body>
