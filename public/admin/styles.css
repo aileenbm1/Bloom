@@ -173,3 +173,14 @@ dialog::backdrop { background: rgba(47, 39, 56, .4); }
   a { color: inherit; text-decoration: none; }
 }
 .card > h2:first-child, form.card > h2:first-child { margin-top: 0; }
+
+/* Aviso para instalar el panel como app */
+.install {
+  position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom));
+  max-width: 520px; margin: 0 auto; z-index: 40;
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+}
+.install span { flex: 1; font-size: .9rem; }
+.install #install-close { padding: 4px 10px; font-size: 1.1rem; line-height: 1; }

@@ -6,7 +6,14 @@
   <meta name="robots" content="noindex, nofollow, noarchive">
   <meta name="referrer" content="no-referrer">
   <title>BLOOM · Control de pagos</title>
+  <meta name="theme-color" content="#5b4a7a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="BLOOM">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+  <link rel="manifest" href="/admin/manifest.webmanifest">
   <link rel="stylesheet" href="/admin/styles.css">
 </head>
 <body>
@@ -24,6 +31,12 @@
     <p class="muted">Cargando…</p>
   </main>
   <div id="toast" class="toast" role="status" hidden></div>
+  <div id="install" class="install no-print" role="region" aria-label="Instalar app" hidden>
+    <span id="install-text"></span>
+    <button type="button" id="install-btn" hidden>Instalar app</button>
+    <button type="button" class="ghost" id="install-close" aria-label="Cerrar">×</button>
+  </div>
   <script src="/admin/app.js"></script>
+  <script src="/admin/pwa.js"></script>
 </body>
 </html>
