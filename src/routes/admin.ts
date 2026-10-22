@@ -2,7 +2,6 @@ import { Hono } from "hono";
 import type { AppEnv } from "../env";
 import {
   audit,
-  balanceExpr,
   getClientSummary,
   getPayments,
   getPurchases,
@@ -71,16 +70,20 @@ admin.get("/dashboard", async (c) => {
   const m = month.results[0] as { paid_month_cents: number; payments_month: number };
   const list = await listClientSummaries(db);
   const pending = list.filter((x) => x.status === "pendiente");
+  const credit = list.filter((x) => x.status === "a_favor");
   const overdue = pending.filter((x) => x.next_due_date && x.next_due_date < today);
   return c.json({
     purchases_cents: t.purchases_cents,
     paid_cents: t.paid_cents,
-    balance_cents: t.purchases_cents - t.paid_cents,
+    // Lo que deben las clientas, sin restar los saldos a favor de otras.
+    balance_cents: pending.reduce((sum, x) => sum + x.balance_cents, 0),
+    credit_cents: credit.reduce((sum, x) => sum - x.balance_cents, 0),
     paid_month_cents: m.paid_month_cents,
     payments_month: m.payments_month,
     clients_total: (clients.results[0] as { n: number }).n,
     clients_pending: pending.length,
     clients_settled: list.filter((x) => x.status === "liquidada").length,
+    clients_credit: credit.length,
     clients_overdue: overdue.length,
     top_pending: pending.sort((a, b) => b.balance_cents - a.balance_cents).slice(0, 5),
   });
@@ -254,10 +257,9 @@ admin.post("/purchases/:id/cancel", async (c) => {
       .prepare(
         `UPDATE purchases SET status = 'cancelled', cancelled_at = ?1, cancel_reason = ?2, cancelled_by = ?3
          WHERE id = ?4 AND status = 'active'
-           AND NOT EXISTS (SELECT 1 FROM payments WHERE purchase_id = ?4 AND status = 'valid')
-           AND ${balanceExpr("?5")} - total_cents >= 0`,
+           AND NOT EXISTS (SELECT 1 FROM payments WHERE purchase_id = ?4 AND status = 'valid')`,
       )
-      .bind(ts, reason, a.id, id, p.client_id),
+      .bind(ts, reason, a.id, id),
     db
       .prepare(
         `INSERT INTO audit_log (admin_id, action, entity_type, entity_id, details, ip_hash)
@@ -267,7 +269,7 @@ admin.post("/purchases/:id/cancel", async (c) => {
       .bind(a.id, id, JSON.stringify({ client_id: p.client_id, total_cents: p.total_cents, reason }), c.get("ipHash"), ts),
   ]);
   if (upd.meta.changes !== 1) {
-    throw new HttpError(409, "No se puede cancelar: primero anula los abonos asociados a esta compra o que dejarían saldo a favor");
+    throw new HttpError(409, "No se puede cancelar: primero anula los abonos asociados a esta compra");
   }
   return c.json({ ok: true, client: await getClientSummary(db, p.client_id) });
 });
@@ -300,8 +302,8 @@ async function checkPurchaseBelongs(db: D1Database, purchaseId: string | null, c
 }
 
 /**
- * INSERT protegido: el importe solo se guarda si no excede el saldo pendiente (y el de la
- * compra, si se indicó). Si la condición falla, el importe es NULL y la restricción NOT NULL
+ * INSERT protegido. Un abono a la cuenta general puede exceder el saldo (queda saldo a favor);
+ * uno aplicado a una compra no puede exceder lo que resta de esa compra. Si la condición falla, el importe es NULL y la restricción NOT NULL
  * aborta todo el lote, de modo que la validación y la escritura son atómicas.
  */
 function guardedPaymentInsert(
@@ -312,8 +314,7 @@ function guardedPaymentInsert(
     .prepare(
       `INSERT INTO payments (id, client_id, purchase_id, amount_cents, paid_at, method, note, created_by, replaces_payment_id)
        VALUES (?1, ?2, ?3,
-         CASE WHEN ?4 <= ${balanceExpr("?2")}
-               AND (?3 IS NULL OR (EXISTS (SELECT 1 FROM purchases WHERE id = ?3 AND client_id = ?2 AND status = 'active')
+         CASE WHEN (?3 IS NULL OR (EXISTS (SELECT 1 FROM purchases WHERE id = ?3 AND client_id = ?2 AND status = 'active')
                                    AND ?4 <= ${purchaseRemainingExpr("?3")}))
                AND (?10 IS NULL OR EXISTS (SELECT 1 FROM payments WHERE id = ?9 AND status = 'voided' AND voided_at = ?10))
               THEN ?4 ELSE NULL END,
@@ -343,7 +344,7 @@ admin.post("/clients/:id/payments", async (c) => {
       }),
     ]);
   } catch (err) {
-    if (isGuardFailure(err)) throw new HttpError(409, "El abono excede el saldo pendiente");
+    if (isGuardFailure(err)) throw new HttpError(409, "El abono excede lo que resta de la compra");
     throw err;
   }
   return c.json({ payment_id: id, client: await getClientSummary(db, clientId) }, 201);
@@ -410,7 +411,7 @@ admin.post("/payments/:id/correct", async (c) => {
       }),
     ]);
   } catch (err) {
-    if (isGuardFailure(err)) throw new HttpError(409, "La corrección excede el saldo pendiente o el abono ya fue modificado");
+    if (isGuardFailure(err)) throw new HttpError(409, "La corrección excede lo que resta de la compra o el abono ya fue modificado");
     throw err;
   }
   return c.json({ payment_id: newId, client: await getClientSummary(db, old.client_id) }, 201);
@@ -505,7 +506,7 @@ admin.get("/audit/entry/:id", async (c) => {
 
 // --- Exportaciones CSV (Excel) -------------------------------------------------
 
-const STATUS_LABEL: Record<string, string> = { pendiente: "Pendiente", liquidada: "Liquidada", sin_compras: "Sin compras" };
+const STATUS_LABEL: Record<string, string> = { pendiente: "Debe", liquidada: "Al corriente", a_favor: "A favor", sin_compras: "Sin compras" };
 
 admin.get("/export/clientes.csv", async (c) => {
   const list = await listClientSummaries(c.env.DB);
@@ -515,16 +516,17 @@ admin.get("/export/clientes.csv", async (c) => {
     String(x.purchase_count),
     money(x.purchases_cents),
     money(x.paid_cents),
-    money(x.balance_cents),
+    money(Math.max(x.balance_cents, 0)),
+    money(Math.max(-x.balance_cents, 0)),
     STATUS_LABEL[x.status],
     x.next_due_date ?? "",
     x.last_payment_at ?? "",
   ]);
   return csvResponse(
     "bloom-clientes",
-    ["Cliente", "Teléfono", "Compras", "Total compras (MXN)", "Total abonado (MXN)", "Saldo pendiente (MXN)", "Estado", "Fecha límite", "Último abono"],
+    ["Cliente", "Teléfono", "Compras", "Total compras (MXN)", "Total abonado (MXN)", "Saldo pendiente (MXN)", "Saldo a favor (MXN)", "Estado", "Fecha límite", "Último abono"],
     rows,
-    [3, 4, 5],
+    [3, 4, 5, 6],
   );
 });
 

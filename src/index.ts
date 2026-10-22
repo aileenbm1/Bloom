@@ -17,7 +17,7 @@ for (const path of ["/api/*", "/cuenta", "/cuenta/*"]) {
 
 app.get("/", (c) => c.redirect("/admin/", 302));
 app.get("/admin", (c) => c.redirect("/admin/", 301));
-app.get("/favicon.ico", (c) => c.redirect("/favicon.svg", 301));
+app.get("/favicon.ico", (c) => c.redirect("/favicon.png", 301));
 
 app.route("/api/auth", auth);
 app.route("/api/admin", admin);

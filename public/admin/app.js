@@ -37,7 +37,7 @@
     const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Mexico_City", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
     return parts;
   }
-  const STATUS = { pendiente: "Pendiente", liquidada: "Liquidada", sin_compras: "Sin compras" };
+  const STATUS = { pendiente: "Debe", liquidada: "Al corriente", a_favor: "A favor", sin_compras: "Sin compras" };
   const METHODS = [
     ["efectivo", "Efectivo"],
     ["transferencia", "Transferencia"],
@@ -161,6 +161,32 @@
     return h("span", { class: "badge " + status }, STATUS[status] || status);
   }
 
+  // "Debe $1,250.00" · "Al corriente" · "A favor $300.00"
+  function balanceLabel(c) {
+    if (c.balance_cents > 0) return "Debe " + money(c.balance_cents);
+    if (c.balance_cents < 0) return "A favor " + money(-c.balance_cents);
+    return STATUS[c.status];
+  }
+
+  // Importe escrito en el formulario, en centavos (null si no se entiende).
+  function amountCents(v) {
+    const n = Number(String(v || "").replace(/[$,\s]/g, ""));
+    return Number.isFinite(n) && n > 0 ? Math.round(n * 100) : null;
+  }
+
+  // Pide confirmación si el abono deja a la clienta con saldo a favor. `freed` = importe que se anula antes (corrección).
+  async function confirmCredit(c, data, freed = 0) {
+    const amount = amountCents(data.amount);
+    if (amount === null) return true;
+    const after = c.balance_cents + freed - amount;
+    if (after >= 0) return true;
+    return !!(await confirmDialog({
+      title: "Quedará saldo a favor",
+      message: "Con este abono la clienta tendrá " + money(-after) + " a su favor. Se descontará de su próxima compra. ¿Continuar?",
+      confirmText: "Sí, registrar",
+    }));
+  }
+
   function waNumber(phone) {
     if (!phone) return null;
     if (/^\d{10}$/.test(phone)) return "52" + phone;
@@ -195,7 +221,7 @@
         }
       });
     });
-    setView(h("div", { class: "login" }, h("img", { class: "logo", src: "/logo.png", alt: "BLOOM · A tu manera", width: 280, height: 216 }), form));
+    setView(h("div", { class: "login" }, h("img", { class: "logo", src: "/logo.png", alt: "BLOOM · A tu manera", width: 280, height: 154 }), form));
     form.querySelector("input").focus();
   }
 
@@ -219,9 +245,10 @@
         tile("Deuda total registrada", money(d.purchases_cents)),
         tile("Pagos recibidos", money(d.paid_cents)),
         tile("Saldo pendiente", money(d.balance_cents), true),
+        tile("Saldo a favor de clientas", money(d.credit_cents) + " · " + d.clients_credit),
         tile("Abonos este mes", money(d.paid_month_cents) + " · " + d.payments_month),
         tile("Clientes con saldo", String(d.clients_pending) + " de " + d.clients_total),
-        tile("Cuentas liquidadas", String(d.clients_settled)),
+        tile("Cuentas al corriente", String(d.clients_settled)),
         tile("Con fecha límite vencida", String(d.clients_overdue)),
       ),
       h("h2", {}, "Mayores saldos pendientes"),
@@ -256,9 +283,7 @@
             h(
               "span",
               { class: "num" },
-              h("strong", {}, money(Math.max(c.balance_cents, 0))),
-              " ",
-              badge(c.status),
+              h("span", { class: "badge " + c.status }, balanceLabel(c)),
               c.next_due_date && c.next_due_date < t ? [" ", h("span", { class: "badge late" }, "Vencida")] : null,
             ),
           ),
@@ -276,7 +301,7 @@
     const filter = h(
       "select",
       { name: "status", "aria-label": "Filtrar" },
-      [["", "Todas"], ["pendiente", "Pendientes"], ["liquidada", "Liquidadas"], ["sin_compras", "Sin compras"]].map(([v, l]) =>
+      [["", "Todas"], ["pendiente", "Deben"], ["liquidada", "Al corriente"], ["a_favor", "Con saldo a favor"], ["sin_compras", "Sin compras"]].map(([v, l]) =>
         h("option", { value: v, selected: v === status }, l),
       ),
     );
@@ -343,14 +368,14 @@
     setView(
       h("p", { class: "no-print" }, h("a", { href: "#/clientes" }, "← Clientes")),
       h("div", { class: "print-only" }, h("h2", {}, "BLOOM · Estado de cuenta"), h("p", { class: "muted" }, "Generado el " + fdate(t))),
-      h("h1", {}, c.name, " ", badge(c.status)),
+      h("h1", {}, c.name, " ", h("span", { class: "badge " + c.status }, balanceLabel(c))),
       h("p", { class: "muted" }, c.phone ? "Tel. " + c.phone : "Sin teléfono", c.notes ? " · " + c.notes : ""),
       h(
         "div",
         { class: "grid" },
         tile("Total de compras", money(c.purchases_cents)),
         tile("Total abonado", money(c.paid_cents)),
-        tile("Saldo pendiente", money(Math.max(c.balance_cents, 0)), true),
+        c.balance_cents < 0 ? tile("Saldo a favor", money(-c.balance_cents), true) : tile("Saldo pendiente", money(c.balance_cents), true),
         c.next_due_date ? tile("Fecha límite" + (c.next_due_date < t ? " (vencida)" : ""), fdate(c.next_due_date)) : null,
       ),
       h(
@@ -503,13 +528,15 @@
 
   function paymentForm(c, activePurchases) {
     const err = errorBox();
-    const form = h("form", { class: "card no-print" }, h("h2", { style: null }, "Registrar abono"), paymentFields(activePurchases), err, h("button", { type: "submit", disabled: c.balance_cents <= 0 }, "Registrar abono"));
-    if (c.balance_cents <= 0) form.append(h("p", { class: "muted small" }, "La cuenta no tiene saldo pendiente."));
+    const form = h("form", { class: "card no-print" }, h("h2", { style: null }, "Registrar abono"), paymentFields(activePurchases), err, h("button", { type: "submit" }, "Registrar abono"));
+    if (c.balance_cents <= 0) form.append(h("p", { class: "muted small" }, "La cuenta no tiene saldo pendiente: lo que abones a la cuenta general quedará como saldo a favor."));
     form.addEventListener("submit", (e) => {
       e.preventDefault();
       submitting(form, async () => {
         try {
-          await api("POST", `/api/admin/clients/${c.id}/payments`, formData(form));
+          const data = formData(form);
+          if (!(await confirmCredit(c, data))) return;
+          await api("POST", `/api/admin/clients/${c.id}/payments`, data);
           toast("Abono registrado");
           route();
         } catch (e2) {
@@ -608,7 +635,7 @@
                   { class: "no-print keep" },
                   y.status === "valid"
                     ? [
-                        h("button", { type: "button", class: "secondary small", onclick: () => correctPayment(y, activePurchases) }, "Corregir"),
+                        h("button", { type: "button", class: "secondary small", onclick: () => correctPayment(c, y, activePurchases) }, "Corregir"),
                         " ",
                         h("button", { type: "button", class: "danger small", onclick: () => voidPayment(y) }, "Anular"),
                       ]
@@ -635,7 +662,7 @@
     }
   }
 
-  async function correctPayment(y, activePurchases) {
+  async function correctPayment(c, y, activePurchases) {
     const data = await confirmDialog({
       title: "Corregir abono",
       message: "Se anulará el abono original y se registrará el correcto en una sola operación auditada.",
@@ -643,6 +670,7 @@
       confirmText: "Guardar corrección",
     });
     if (!data) return;
+    if (!(await confirmCredit(c, data, y.amount_cents))) return;
     try {
       await api("POST", `/api/admin/payments/${y.id}/correct`, data);
       toast("Abono corregido");

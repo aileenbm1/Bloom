@@ -158,14 +158,14 @@ describe("5-7 · Abonos y saldos", () => {
   it("no acepta importes inválidos", async () => {
     const s = await login();
     const { client } = await newClient(s, "Inés Inválidos");
-    await newPurchase(s, client.id, [{ description: "Bolso", unit_price: "500" }]);
+    const pur = await newPurchase(s, client.id, [{ description: "Bolso", unit_price: "500" }]);
     const bad: unknown[] = ["-10", "0", "0.00", "abc", "10.555", "1e3", "", null, "NaN", "Infinity", -5, 0, 10.555, "１００", "99999999999"];
     for (const amount of bad) {
       const r = await s.json("POST", `/api/admin/clients/${client.id}/payments`, { amount, paid_at: "2026-10-05", method: "efectivo" });
       expect(r.status, JSON.stringify(amount)).toBe(400);
     }
-    // Mayor que el saldo pendiente
-    const over = await s.json("POST", `/api/admin/clients/${client.id}/payments`, { amount: "500.01", paid_at: "2026-10-05", method: "efectivo" });
+    // Mayor que lo que resta de la compra a la que se aplica
+    const over = await s.json("POST", `/api/admin/clients/${client.id}/payments`, { amount: "500.01", paid_at: "2026-10-05", method: "efectivo", purchase_id: pur.data.purchase_id });
     expect(over.status).toBe(409);
     // Método o fecha inválidos
     expect((await s.json("POST", `/api/admin/clients/${client.id}/payments`, { amount: "10", paid_at: "2026-02-30", method: "efectivo" })).status).toBe(400);
@@ -191,19 +191,47 @@ describe("5-7 · Abonos y saldos", () => {
     const pending = await s.json("GET", "/api/admin/clients?status=pendiente");
     expect(pending.data.clients.map((x: any) => x.id)).not.toContain(c.client.id);
     const p = await openPortal(c.link);
-    expect(p.html).toContain("Liquidada");
+    expect(p.html).toContain("Al corriente");
     expect(p.html).toMatch(/Saldo pendiente<\/span><strong>\$0\.00<\/strong>/);
-    // No se puede abonar a una cuenta en cero.
-    expect((await s.json("POST", `/api/admin/clients/${c.client.id}/payments`, { amount: "1", paid_at: "2026-10-03", method: "efectivo" })).status).toBe(409);
+  });
+
+  it("un abono mayor al saldo deja saldo a favor que se descuenta de la siguiente compra", async () => {
+    const s = await login();
+    const c = await newClient(s, "Fernanda Favor");
+    const pur = await newPurchase(s, c.client.id, [{ description: "Blusa", unit_price: "400" }]);
+    // Aplicado a la compra no puede exceder lo que resta de ella.
+    expect((await s.json("POST", `/api/admin/clients/${c.client.id}/payments`, { amount: "400.01", paid_at: "2026-10-03", method: "efectivo", purchase_id: pur.data.purchase_id })).status).toBe(409);
+    // A la cuenta general sí: queda saldo a favor.
+    const r = await s.json("POST", `/api/admin/clients/${c.client.id}/payments`, { amount: "550", paid_at: "2026-10-03", method: "efectivo" });
+    expect(r.status).toBe(201);
+    expect(r.data.client.balance_cents).toBe(-15000);
+    expect(r.data.client.status).toBe("a_favor");
+    const list = await s.json("GET", "/api/admin/clients?status=a_favor");
+    expect(list.data.clients.map((x: any) => x.id)).toContain(c.client.id);
+    const dash = (await s.json("GET", "/api/admin/dashboard")).data;
+    expect(dash.credit_cents).toBeGreaterThanOrEqual(15000);
+    expect(dash.clients_credit).toBeGreaterThanOrEqual(1);
+    const p = await openPortal(c.link);
+    expect(p.html).toMatch(/Saldo a tu favor<\/span><strong>\$150\.00<\/strong>/);
+    const csv = await (await s.get("/api/admin/export/clientes.csv")).text();
+    expect(csv.split("\r\n").find((l) => l.includes("Fernanda Favor"))).toContain(",400.00,550.00,0.00,150.00,A favor,");
+    // La siguiente compra consume el saldo a favor.
+    const next = await newPurchase(s, c.client.id, [{ description: "Falda", unit_price: "200" }]);
+    expect(next.data.client.balance_cents).toBe(5000);
+    expect(next.data.client.status).toBe("pendiente");
+    // Un anticipo sin compras también cuenta como saldo a favor.
+    const d = await newClient(s, "Nora Anticipo");
+    const adv = await s.json("POST", `/api/admin/clients/${d.client.id}/payments`, { amount: "300", paid_at: "2026-10-03", method: "transferencia" });
+    expect(adv.data.client.status).toBe("a_favor");
   });
 
   it("corrige un abono de forma atómica y auditada", async () => {
     const s = await login();
     const c = await newClient(s, "Carmen Corrección");
-    await newPurchase(s, c.client.id, [{ description: "Abrigo", unit_price: "900" }]);
+    const pur = await newPurchase(s, c.client.id, [{ description: "Abrigo", unit_price: "900" }]);
     const p = await s.json("POST", `/api/admin/clients/${c.client.id}/payments`, { amount: "300", paid_at: "2026-10-02", method: "efectivo" });
-    // Corrección inválida (excede el saldo): no debe quedar nada a medias.
-    const bad = await s.json("POST", `/api/admin/payments/${p.data.payment_id}/correct`, { amount: "901", paid_at: "2026-10-02", method: "efectivo", reason: "Error de captura" });
+    // Corrección inválida (excede lo que resta de la compra): no debe quedar nada a medias.
+    const bad = await s.json("POST", `/api/admin/payments/${p.data.payment_id}/correct`, { amount: "901", paid_at: "2026-10-02", method: "efectivo", purchase_id: pur.data.purchase_id, reason: "Error de captura" });
     expect(bad.status).toBe(409);
     let d = await s.json("GET", `/api/admin/clients/${c.client.id}`);
     expect(d.data.payments.filter((x: any) => x.status === "valid")).toHaveLength(1);
@@ -365,7 +393,7 @@ describe("11 · Exportaciones", () => {
     expect([...buf.slice(0, 3)]).toEqual([0xef, 0xbb, 0xbf]); // BOM UTF-8
     const text = new TextDecoder().decode(buf);
     const line = text.split("\r\n").find((l) => l.includes("Gabriela"))!;
-    expect(line).toBe('"Gabriela Export, ""G""",55 3333 4444,1,370.00,100.10,269.90,Pendiente,,2026-10-04');
+    expect(line).toBe('"Gabriela Export, ""G""",55 3333 4444,1,370.00,100.10,269.90,0.00,Debe,,2026-10-04');
     const compras = await (await s.get("/api/admin/export/compras.csv")).text();
     const cl = compras.split("\r\n").find((l) => l.includes("Gabriela"))!;
     expect(cl).toContain("370.35,0.35,370.00");

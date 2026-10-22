@@ -116,11 +116,11 @@ function page(c: Context<AppEnv>, status: number, title: string, content: string
 <meta name="robots" content="noindex, nofollow, noarchive">
 <meta name="referrer" content="no-referrer">
 <title>${esc(title)} · ${brand}</title>
-<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon.png" type="image/png">
 <link rel="stylesheet" href="/portal.css">
 </head>
 <body>
-<header class="brand"><img class="logo" src="/logo-wordmark.png" alt="${brand}" width="161" height="40"></header>
+<header class="brand"><img class="logo" src="/logo-wordmark.png" alt="${brand}" width="102" height="56"></header>
 <main class="wrap">${content}</main>
 <script src="/portal.js"></script>
 </body>
@@ -136,7 +136,8 @@ function renderAccount(
   payments: Awaited<ReturnType<typeof getPayments>>,
 ): string {
   const settled = client.balance_cents <= 0;
-  const statusLabel = settled ? "Liquidada" : "Pendiente";
+  const credit = client.balance_cents < 0;
+  const statusLabel = credit ? "Saldo a favor" : settled ? "Al corriente" : "Pendiente";
   const today = new Date().toISOString().slice(0, 10);
   const wa = /^\d{10,15}$/.test(whatsapp)
     ? `<a class="btn wa" href="https://wa.me/${whatsapp}?text=${encodeURIComponent(`Hola ${business}, soy ${client.name}. Tengo una pregunta sobre mi cuenta.`)}" target="_blank" rel="noopener noreferrer">Contactar por WhatsApp</a>`
@@ -182,7 +183,11 @@ function renderAccount(
   <section class="totals">
     <div class="tile"><span>Total de compras</span><strong>${esc(fmtMoney(client.purchases_cents))}</strong></div>
     <div class="tile"><span>Total abonado</span><strong>${esc(fmtMoney(client.paid_cents))}</strong></div>
-    <div class="tile main"><span>Saldo pendiente</span><strong>${esc(fmtMoney(Math.max(client.balance_cents, 0)))}</strong></div>
+    ${
+      credit
+        ? `<div class="tile main credit"><span>Saldo a tu favor</span><strong>${esc(fmtMoney(-client.balance_cents))}</strong><small>Se descontará de tu próxima compra.</small></div>`
+        : `<div class="tile main"><span>Saldo pendiente</span><strong>${esc(fmtMoney(client.balance_cents))}</strong></div>`
+    }
     ${client.next_due_date ? `<div class="tile ${overdue ? "late" : ""}"><span>Fecha límite</span><strong>${esc(fmtDate(client.next_due_date))}</strong></div>` : ""}
   </section>
 

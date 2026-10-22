@@ -1,14 +1,14 @@
 :root {
-  /* Colores tomados del logo */
-  --bg: #e9e5e4;
+  /* Paleta del manual de marca */
+  --bg: #f8f4fa;
   --surface: #ffffff;
-  --ink: #2f2738;
-  --muted: #675d70;
-  --line: #ddd6dc;
-  --brand: #5b4a7a;
+  --ink: #2b0e3f;
+  --muted: #6b5a78;
+  --line: #e6d7f1;
+  --brand: #6a2f8f;
   --brand-ink: #ffffff;
-  --brand-soft: #ece7f3;
-  --gold: #b39b7c;
+  --brand-soft: #e6d7f1;
+  --gold: #d4b574;
   --ok: #2f7d55;
   --ok-soft: #e3f3ea;
   --warn: #a55a00;
@@ -16,19 +16,22 @@
   --danger: #b3261e;
   --danger-soft: #fbe5e3;
   --radius: 12px;
-  --shadow: 0 1px 2px rgba(47, 39, 56, .06), 0 4px 16px rgba(47, 39, 56, .05);
+  --shadow: 0 1px 2px rgba(43, 14, 63, .06), 0 4px 16px rgba(43, 14, 63, .05);
   color-scheme: light;
 }
 
+@font-face { font-family: "Montserrat"; src: url("/fonts/montserrat.woff2") format("woff2"); font-weight: 100 900; font-style: normal; font-display: swap; }
+@font-face { font-family: "Playfair Display"; src: url("/fonts/playfair-display.woff2") format("woff2"); font-weight: 400 900; font-style: normal; font-display: swap; }
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0;
   background: var(--bg);
   color: var(--ink);
-  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font: 15px/1.5 "Montserrat", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 h1, h2, h3 { line-height: 1.2; margin: 0 0 .6rem; }
+h1, h2 { font-family: "Playfair Display", Georgia, serif; font-weight: 600; }
 h1 { font-size: 1.5rem; color: var(--brand); }
 h2 { font-size: 1.15rem; margin-top: 1.6rem; }
 h3 { font-size: 1rem; }
@@ -45,7 +48,7 @@ a { color: var(--brand); }
   padding: 10px 16px; background: var(--bg); border-bottom: 1px solid var(--gold);
 }
 .topbar .logo { display: block; line-height: 0; }
-.topbar .logo img { height: 32px; width: auto; }
+.topbar .logo img { height: 44px; width: auto; }
 .topbar nav { display: flex; gap: 4px; flex: 1; overflow-x: auto; }
 .topbar nav a { padding: 6px 10px; border-radius: 8px; color: var(--ink); text-decoration: none; white-space: nowrap; }
 .topbar nav a.active { background: var(--brand-soft); color: var(--brand); font-weight: 600; }
@@ -94,7 +97,8 @@ tr.voided td.keep, tr.cancelled td.keep { text-decoration: none; }
 
 .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: .8rem; font-weight: 600; }
 .badge.pendiente { background: var(--warn-soft); color: var(--warn); }
-.badge.liquidada { background: var(--ok-soft); color: var(--ok); }
+.badge.liquidada { background: var(--brand-soft); color: var(--brand); }
+.badge.a_favor { background: var(--ok-soft); color: var(--ok); }
 .badge.sin_compras { background: #eee; color: var(--muted); }
 .badge.late { background: var(--danger-soft); color: var(--danger); }
 
@@ -142,7 +146,7 @@ label.inline input { width: auto; }
 .item-row button { min-height: 40px; padding: 0; }
 
 dialog { border: none; border-radius: var(--radius); padding: 18px; width: min(480px, calc(100vw - 32px)); box-shadow: 0 10px 40px rgba(0,0,0,.25); }
-dialog::backdrop { background: rgba(47, 39, 56, .4); }
+dialog::backdrop { background: rgba(43, 14, 63, .4); }
 
 .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 10px 16px; border-radius: 10px; z-index: 20; max-width: calc(100vw - 32px); }
 

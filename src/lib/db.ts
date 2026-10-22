@@ -14,8 +14,11 @@ export interface ClientSummary {
   purchase_count: number;
   next_due_date: string | null;
   last_payment_at: string | null;
-  status: "pendiente" | "liquidada" | "sin_compras";
+  /** pendiente: debe dinero · liquidada: al corriente · a_favor: pagó de más (saldo negativo). */
+  status: "pendiente" | "liquidada" | "a_favor" | "sin_compras";
 }
+
+export const CLIENT_STATUSES = ["pendiente", "liquidada", "a_favor", "sin_compras"] as const;
 
 const SUMMARY_SELECT = `
 SELECT c.id, c.name, c.phone, c.notes, c.created_at, c.updated_at,
@@ -36,7 +39,7 @@ function finish(r: SummaryRow): ClientSummary {
     ...r,
     balance_cents: balance,
     next_due_date: balance > 0 ? r.next_due_date : null,
-    status: r.purchase_count === 0 && balance === 0 ? "sin_compras" : balance > 0 ? "pendiente" : "liquidada",
+    status: balance > 0 ? "pendiente" : balance < 0 ? "a_favor" : r.purchase_count === 0 ? "sin_compras" : "liquidada",
   };
 }
 
@@ -65,7 +68,7 @@ export async function listClientSummaries(
     rows = res.results;
   }
   const list = rows.map(finish);
-  if (opts.status === "pendiente" || opts.status === "liquidada" || opts.status === "sin_compras") {
+  if ((CLIENT_STATUSES as readonly string[]).includes(opts.status ?? "")) {
     return list.filter((c) => c.status === opts.status);
   }
   return list;
@@ -146,16 +149,6 @@ export async function getPayments(db: D1Database, clientId: string, onlyValid = 
     .bind(clientId)
     .all<PaymentRow>();
   return res.results;
-}
-
-/**
- * Expresión SQL del saldo pendiente de un cliente; ?C es el parámetro del cliente.
- * Se usa dentro de INSERT/UPDATE condicionales para que la validación y la escritura
- * ocurran en la misma sentencia (sin condiciones de carrera).
- */
-export function balanceExpr(param: string): string {
-  return `(COALESCE((SELECT SUM(total_cents) FROM purchases WHERE client_id = ${param} AND status = 'active'), 0)
-         - COALESCE((SELECT SUM(amount_cents) FROM payments WHERE client_id = ${param} AND status = 'valid'), 0))`;
 }
 
 export function purchaseRemainingExpr(param: string): string {

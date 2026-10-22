@@ -1,15 +1,18 @@
 :root {
-  /* Colores tomados del logo */
-  --bg: #e9e5e4; --surface: #fff; --ink: #2f2738; --muted: #675d70; --line: #ddd6dc;
-  --brand: #5b4a7a; --brand-soft: #ece7f3; --gold: #b39b7c; --ok: #2f7d55; --ok-soft: #e3f3ea;
+  /* Paleta del manual de marca */
+  --bg: #f8f4fa; --surface: #fff; --ink: #2b0e3f; --muted: #6b5a78; --line: #e6d7f1;
+  --brand: #6a2f8f; --brand-soft: #e6d7f1; --gold: #d4b574; --ok: #2f7d55; --ok-soft: #e3f3ea;
   --warn: #a55a00; --warn-soft: #fbeedc; --danger: #b3261e; --danger-soft: #fbe5e3;
   color-scheme: light;
 }
+@font-face { font-family: "Montserrat"; src: url("/fonts/montserrat.woff2") format("woff2"); font-weight: 100 900; font-style: normal; font-display: swap; }
+@font-face { font-family: "Playfair Display"; src: url("/fonts/playfair-display.woff2") format("woff2"); font-weight: 400 900; font-style: normal; font-display: swap; }
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
-body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 "Montserrat", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; }
+h1, h2 { font-family: "Playfair Display", Georgia, serif; font-weight: 600; }
 .brand { background: var(--bg); border-bottom: 1px solid var(--gold); padding: 12px 16px; text-align: center; line-height: 0; }
-.logo { height: 40px; width: auto; }
+.logo { height: 56px; width: auto; }
 .wrap { max-width: 720px; margin: 0 auto; padding: 16px; }
 h1 { font-size: 1.6rem; margin: 0 0 8px; color: var(--brand); }
 h2 { font-size: 1.1rem; margin: 28px 0 10px; }
@@ -27,6 +30,8 @@ h2 { font-size: 1.1rem; margin: 28px 0 10px; }
 .tile.main { background: var(--brand); border-color: var(--brand); border-bottom: 3px solid var(--gold); color: #fff; grid-column: 1 / -1; text-align: center; }
 .tile.main span { color: rgba(255,255,255,.85); }
 .tile.main strong { font-size: 1.8rem; }
+.tile.main.credit { background: var(--ok); border-color: var(--ok); }
+.tile.main small { display: block; font-size: .85rem; color: rgba(255,255,255,.9); }
 .tile.late { background: var(--danger-soft); border-color: var(--danger-soft); color: var(--danger); }
 .actions { display: flex; flex-direction: column; gap: 10px; margin: 12px 0 8px; }
 .btn { display: flex; align-items: center; justify-content: center; min-height: 48px; padding: 10px 16px; border-radius: 12px; border: 1px solid var(--brand); background: var(--brand); color: #fff; font: inherit; font-weight: 700; text-decoration: none; cursor: pointer; }
@@ -45,7 +50,8 @@ button.link { background: none; border: none; color: var(--muted); text-decorati
   body { background: #fff; font-size: 12px; }
   .no-print, script { display: none !important; }
   .tile.main { background: #fff; color: var(--ink); border: 2px solid var(--ink); }
-  .tile.main span { color: var(--muted); }
+  .tile.main span, .tile.main small { color: var(--muted); }
+  .tile.main.credit { background: #fff; border-color: var(--ok); }
   .card, .tile { break-inside: avoid; }
   .totals { grid-template-columns: repeat(4, 1fr); }
 }

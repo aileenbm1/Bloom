@@ -175,7 +175,7 @@ try {
   // 11 · Exportación con importes correctos (contra el servidor real)
   const csv = await call("GET", "/api/admin/export/clientes.csv");
   const line = csv.text.split("\r\n").find((l) => l.includes("Valeria"));
-  step("11 · CSV exportado con importes correctos", line === "Valeria Persistente,55 4433 2211,1,1599.90,599.90,1000.00,Pendiente,2026-11-10,2026-10-12", line);
+  step("11 · CSV exportado con importes correctos", line === "Valeria Persistente,55 4433 2211,1,1599.90,599.90,1000.00,0.00,Debe,2026-11-10,2026-10-12", line);
 
   // 13 · Respaldo y restauración
   await stopServer();

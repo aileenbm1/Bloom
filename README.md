@@ -48,7 +48,8 @@ Si prefieres trabajar desde tu computadora, sigue la sección 3.
 
 **Panel administrativo** (`/admin/`)
 - Inicio y cierre de sesión; cambio de contraseña.
-- Alta y edición de clientes; búsqueda por nombre o teléfono; filtro Pendientes / Liquidadas / Sin compras.
+- Alta y edición de clientes; búsqueda por nombre o teléfono; filtro Deben / Al corriente / Con saldo a favor / Sin compras.
+- Saldo a favor: un abono a la cuenta general puede ser mayor que lo que se debe (anticipo); el excedente se descuenta solo de la siguiente compra. Un abono aplicado a una compra no puede exceder lo que resta de ella.
 - Compras con varias prendas (descripción, talla, cantidad, precio), descuento y fecha límite opcional.
 - Abonos parciales (efectivo, transferencia, tarjeta, depósito, otro) a la cuenta general o a una compra.
 - Correcciones auditadas: anular abono, corregir abono (anula y registra el correcto en una sola transacción), cancelar compra.
@@ -84,7 +85,7 @@ bloom/
 │       └── portal.ts         /cuenta (portal de clientas, HTML generado en servidor)
 ├── public/                   Archivos estáticos
 │   ├── admin/index.html, app.js, styles.css   Panel (sin dependencias externas)
-│   ├── portal.css, portal.js, favicon.svg, robots.txt
+│   ├── portal.css, portal.js, favicon.png, robots.txt
 ├── scripts/                  create-admin, set-secret, setup-local, backup
 ├── test/                     Pruebas automáticas (Vitest dentro del runtime de Workers)
 ├── e2e/run.mjs               Prueba de extremo a extremo (reinicio, respaldo, teléfono)
