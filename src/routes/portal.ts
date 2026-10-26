@@ -246,6 +246,8 @@ function renderAccount(
   const overdue = client.next_due_date && client.next_due_date < today;
   // Día de pago: alguna compra activa vence hoy y todavía hay saldo pendiente.
   const payday = !settled && purchases.some((p) => p.status === "active" && p.due_date === today);
+  // Al abrir el enlace: aviso emergente si hoy vence una compra o si ya pasó la fecha límite.
+  const alert = payday ? "hoy" : overdue && !settled ? "vencido" : null;
 
   return `
   <section class="hero">
@@ -283,23 +285,28 @@ function renderAccount(
   <h2>Compras y prendas</h2>
   ${purchaseRows}
 
-  ${payday ? renderPaydayDialog(client.name, client.balance_cents, today) : ""}
+  ${alert ? renderPaydayDialog(alert, client.name, client.balance_cents, alert === "hoy" ? today : client.next_due_date!) : ""}
 
   <p class="muted small">Consulta generada el ${esc(fmtDate(today))}. Este enlace es personal: no lo compartas.</p>
   <form method="post" action="/cuenta/salir" class="no-print"><button class="link" type="submit">Cerrar esta consulta</button></form>`;
 }
 
 /** Aviso emergente del día de pago. portal.js lo abre al cargar y reproduce el sonido. */
-function renderPaydayDialog(name: string, balanceCents: number, today: string): string {
+function renderPaydayDialog(kind: "hoy" | "vencido", name: string, balanceCents: number, date: string): string {
   const firstName = name.trim().split(/\s+/)[0] ?? "";
+  const who = firstName ? `, ${esc(firstName)}` : "";
+  const title = kind === "hoy" ? `¡Hoy es tu día de pago${who}!` : `Tu pago está pendiente${who}`;
+  const kicker = kind === "hoy" ? esc(fmtDate(date)) : `Fecha límite: ${esc(fmtDate(date))}`;
+  const thanks = kind === "hoy" ? "Gracias por estar al día. 💜" : "Ponte al corriente cuando puedas. 💜";
   return `
   <dialog class="payday no-print" id="aviso-pago" aria-labelledby="aviso-pago-titulo">
     <div class="sparkles" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
-    <p class="payday-kicker">✨ ${esc(fmtDate(today))} ✨</p>
-    <h2 id="aviso-pago-titulo">¡Hoy es tu día de pago${firstName ? `, ${esc(firstName)}` : ""}!</h2>
+    <img class="payday-logo" src="/logo.png" alt="BLOOM · A tu manera" width="200" height="112">
+    <p class="payday-kicker">✦ ${kicker} ✦</p>
+    <h2 id="aviso-pago-titulo">${title}</h2>
     <p>Tu saldo pendiente es de</p>
     <p class="payday-amount">${esc(fmtMoney(balanceCents))}</p>
-    <p class="small">Gracias por estar al día. 💜</p>
+    <p class="small">${thanks}</p>
     <form method="dialog"><button class="btn" type="submit" autofocus>Entendido</button></form>
   </dialog>`;
 }

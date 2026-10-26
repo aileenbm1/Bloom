@@ -323,6 +323,16 @@ describe("Aviso del día de pago", () => {
     expect(p.html).toContain("$800.00");
   });
 
+  it("también aparece si la fecha límite ya pasó, con el logo completo", async () => {
+    const s = await login();
+    const c = await newClient(s, "Vera Vencida");
+    await newPurchase(s, c.client.id, [{ description: "Saco", unit_price: "500" }], { purchase_date: "2026-01-01", due_date: "2026-01-15" });
+    const p = await openPortal(c.link);
+    expect(p.html).toContain('id="aviso-pago"');
+    expect(p.html).toContain("Tu pago está pendiente, Vera");
+    expect(p.html).toContain('src="/logo.png"');
+  });
+
   it("no aparece si la fecha límite es otro día o la cuenta está liquidada", async () => {
     const s = await login();
     const today = localToday();
