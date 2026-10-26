@@ -3,6 +3,7 @@
 
 import type { Env } from "../env";
 import { b64url, fromB64url } from "./crypto";
+import { addDays, ensureScheduleSchema, getSchedule } from "./schedule";
 
 const enc = new TextEncoder();
 
@@ -181,6 +182,17 @@ export function paydayMessage(business: string): PushMessage {
   return { title: "✨ Hoy es tu día de pago", body: `Toca para ver tu estado de cuenta en ${business}.`, tag: "dia-de-pago" };
 }
 
+export function abonoMessage(business: string): PushMessage {
+  return { title: "💜 Hoy toca tu abono", body: `Toca para ver tu abono programado en ${business}.`, tag: "abono" };
+}
+
+export function abonoLateMessage(business: string): PushMessage {
+  return { title: "💜 Tu abono sigue pendiente", body: `Toca para ver tu estado de cuenta en ${business}.`, tag: "abono" };
+}
+
+/** Días después de un abono programado sin cubrir en que se vuelve a recordar. */
+export const ABONO_RETRY_DAYS = 2;
+
 export function reminderMessage(business: string): PushMessage {
   return { title: "💜 Recordatorio de pago", body: `Tienes un saldo pendiente con ${business}. Toca para ver tu estado de cuenta.`, tag: "recordatorio" };
 }
@@ -226,24 +238,41 @@ const HAS_BALANCE = `
   - COALESCE((SELECT SUM(y.amount_cents) FROM payments y WHERE y.client_id = s.client_id AND y.status = 'valid'), 0) > 0`;
 
 /**
- * Aviso automático: a cada clienta con avisos activos, saldo pendiente y una compra que vence hoy.
+ * Aviso automático a cada clienta con avisos activos y saldo pendiente cuando:
+ *  · una compra vence hoy (día de pago), o
+ *  · un abono programado toca hoy, o lleva ABONO_RETRY_DAYS días sin cubrirse.
  * Se puede ejecutar varias veces al día: cada dispositivo lo recibe una sola vez.
  */
 export async function sendPaydayPushes(env: Env, now = new Date(), fetchImpl: typeof fetch = fetch) {
-  await ensurePushSchema(env.DB);
+  await Promise.all([ensurePushSchema(env.DB), ensureScheduleSchema(env.DB)]);
   const today = localToday(now);
+  const retry = addDays(today, -ABONO_RETRY_DAYS);
   const { results } = await env.DB.prepare(
-    `${ACTIVE_SUBS}
-     WHERE (s.payday_sent_on IS NULL OR s.payday_sent_on <> ?1)
-       AND EXISTS (SELECT 1 FROM purchases p WHERE p.client_id = s.client_id AND p.status = 'active' AND p.due_date = ?1)
-       AND ${HAS_BALANCE}
-     LIMIT ?2`,
+    `SELECT q.*, EXISTS (SELECT 1 FROM purchases p WHERE p.client_id = q.client_id AND p.status = 'active' AND p.due_date = ?1) AS payday
+     FROM (${ACTIVE_SUBS}
+       WHERE (s.payday_sent_on IS NULL OR s.payday_sent_on <> ?1)
+         AND (EXISTS (SELECT 1 FROM purchases p WHERE p.client_id = s.client_id AND p.status = 'active' AND p.due_date = ?1)
+              OR EXISTS (SELECT 1 FROM scheduled_payments x WHERE x.client_id = s.client_id AND x.due_date IN (?1, ?3)))
+         AND ${HAS_BALANCE}
+       LIMIT ?2) q`,
   )
-    .bind(today, MAX_SENDS_PER_RUN)
-    .all<SubRow>();
-  const msg = paydayMessage(env.BUSINESS_NAME || "BLOOM");
+    .bind(today, MAX_SENDS_PER_RUN, retry)
+    .all<SubRow & { client_id: string; payday: number }>();
+  const business = env.BUSINESS_NAME || "BLOOM";
+  // Qué mensaje le toca a cada clienta (null: sus abonos de hoy ya están cubiertos).
+  const choice = new Map<string, PushMessage | null>();
   let sent = 0;
   for (const sub of results) {
+    if (!choice.has(sub.client_id)) {
+      let m: PushMessage | null = sub.payday ? paydayMessage(business) : null;
+      if (!m) {
+        const open = (await getSchedule(env.DB, sub.client_id, today)).filter((x) => x.remaining_cents > 0);
+        m = open.some((x) => x.due_date === today) ? abonoMessage(business) : open.some((x) => x.due_date === retry) ? abonoLateMessage(business) : null;
+      }
+      choice.set(sub.client_id, m);
+    }
+    const msg = choice.get(sub.client_id);
+    if (!msg) continue;
     const r = await sendPush(env, sub, msg, fetchImpl);
     if (r === "sent") sent++;
     // Se marca aunque falle, para no reintentar en bucle el mismo día.

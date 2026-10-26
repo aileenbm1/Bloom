@@ -48,23 +48,49 @@ export async function getClientSummary(db: D1Database, id: string): Promise<Clie
   return r ? finish(r) : null;
 }
 
+/** Condición SQL: la clienta (alias c) no fue eliminada desde el panel. */
+export const NOT_DELETED = `NOT EXISTS (SELECT 1 FROM deleted_clients d WHERE d.client_id = c.id)`;
+
+let clientSchemaReady: Promise<void> | null = null;
+
+/** Crea deleted_clients si el despliegue aún no aplicó la migración 0003. */
+export function ensureClientSchema(db: D1Database): Promise<void> {
+  clientSchemaReady ??= db
+    .prepare(
+      `CREATE TABLE IF NOT EXISTS deleted_clients (
+        client_id TEXT PRIMARY KEY REFERENCES clients(id),
+        deleted_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        deleted_by TEXT REFERENCES admins(id))`,
+    )
+    .run()
+    .then(
+      () => undefined,
+      (e) => {
+        clientSchemaReady = null;
+        throw e;
+      },
+    );
+  return clientSchemaReady;
+}
+
 export async function listClientSummaries(
   db: D1Database,
-  opts: { q?: string; status?: string } = {},
+  opts: { q?: string; status?: string; deleted?: boolean } = {},
 ): Promise<ClientSummary[]> {
   const q = (opts.q ?? "").trim().slice(0, 80);
+  const visible = opts.deleted ? `NOT (${NOT_DELETED})` : NOT_DELETED;
   let rows: SummaryRow[];
   if (q) {
     const digits = q.replace(/\D/g, "");
     const like = "%" + q.replace(/[\\%_]/g, (m) => "\\" + m) + "%";
     const phoneLike = digits.length >= 3 ? "%" + digits + "%" : null;
     const res = await db
-      .prepare(`${SUMMARY_SELECT} WHERE c.name LIKE ?1 ESCAPE '\\' OR (?2 IS NOT NULL AND c.phone LIKE ?2) ORDER BY c.name COLLATE NOCASE`)
+      .prepare(`${SUMMARY_SELECT} WHERE (c.name LIKE ?1 ESCAPE '\\' OR (?2 IS NOT NULL AND c.phone LIKE ?2)) AND ${visible} ORDER BY c.name COLLATE NOCASE`)
       .bind(like, phoneLike)
       .all<SummaryRow>();
     rows = res.results;
   } else {
-    const res = await db.prepare(`${SUMMARY_SELECT} ORDER BY c.name COLLATE NOCASE`).all<SummaryRow>();
+    const res = await db.prepare(`${SUMMARY_SELECT} WHERE ${visible} ORDER BY c.name COLLATE NOCASE`).all<SummaryRow>();
     rows = res.results;
   }
   const list = rows.map(finish);

@@ -6,6 +6,7 @@ import { TOKEN_PATTERN, safeEqual, sha256Hex } from "../lib/crypto";
 import { getClientSummary, getPayments, getPurchases, nowIso } from "../lib/db";
 import { PORTAL_COOKIE, hit, isLimited, sameOrigin } from "../lib/http";
 import { MAX_DEVICES_PER_LINK, ensurePushSchema, getVapid, localToday, parseSubscription } from "../lib/push";
+import { type ScheduledPayment, getSchedule, nextDue } from "../lib/schedule";
 import { HttpError, ValidationError } from "../lib/validate";
 
 export { localToday };
@@ -86,14 +87,15 @@ portal.get("/cuenta", async (c) => {
   c.executionCtx.waitUntil(
     db.prepare(`UPDATE access_tokens SET last_used_at = ?1 WHERE id = ?2`).bind(nowIso(), found.tokenId).run(),
   );
-  const [client, purchases, payments, vapid] = await Promise.all([
+  const [client, purchases, payments, vapid, schedule] = await Promise.all([
     getClientSummary(db, found.clientId),
     getPurchases(db, found.clientId, true),
     getPayments(db, found.clientId, true),
     getVapid(db),
+    getSchedule(db, found.clientId, localToday()),
   ]);
   if (!client) return invalidLink(c);
-  return page(c, 200, "Estado de cuenta", renderAccount(c.env.BUSINESS_NAME, c.env.WHATSAPP_NUMBER, client, purchases, payments, vapid.publicKey));
+  return page(c, 200, "Estado de cuenta", renderAccount(c.env.BUSINESS_NAME, c.env.WHATSAPP_NUMBER, client, purchases, payments, vapid.publicKey, schedule));
 });
 
 // --- Avisos push (la clienta los activa con su permiso) ---------------------------
@@ -189,9 +191,10 @@ function page(c: Context<AppEnv>, status: number, title: string, content: string
 <link rel="manifest" href="/portal.webmanifest">
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=2">
 <link rel="stylesheet" href="/portal.css">
+<script src="/tema.js"></script>
 </head>
 <body>
-<header class="brand"><img class="logo" src="/logo-wordmark.png" alt="${brand}" width="102" height="56"></header>
+<header class="brand"><img class="logo" src="/logo-wordmark.png" alt="${brand}" width="102" height="56"><button type="button" class="theme-toggle no-print" data-action="tema" aria-label="Cambiar tema">🌙</button></header>
 <main class="wrap">${content}</main>
 <script src="/portal.js"></script>
 </body>
@@ -206,6 +209,7 @@ function renderAccount(
   purchases: Awaited<ReturnType<typeof getPurchases>>,
   payments: Awaited<ReturnType<typeof getPayments>>,
   vapidKey: string,
+  schedule: ScheduledPayment[] = [],
 ): string {
   const settled = client.balance_cents <= 0;
   const credit = client.balance_cents < 0;
@@ -277,16 +281,50 @@ function renderAccount(
     <button type="button" class="link" data-action="avisos-off" hidden>Desactivar avisos</button>
   </section>
 
+  ${renderSchedule(schedule, client.balance_cents)}
+
   <h2>Historial de abonos</h2>
   ${paymentRows}
 
   <h2>Compras y prendas</h2>
   ${purchaseRows}
 
-  ${renderPaymentNotice(business, whatsapp, client, today)}
+  ${renderPaymentNotice(business, whatsapp, client, today, noticeTarget(client, schedule))}
 
   <p class="muted small">Consulta generada el ${esc(fmtDate(today))}. Este enlace es personal: no lo compartas.</p>
   <form method="post" action="/cuenta/salir" class="no-print"><button class="link" type="submit">Cerrar esta consulta</button></form>`;
+}
+
+const SCHEDULE_LABEL = { pagado: "Cubierto", pendiente: "Próximo", hoy: "Hoy", vencido: "Vencido" } as const;
+
+/** Calendario de abonos que programó la tienda (solo si hay saldo y alguno sin cubrir). */
+function renderSchedule(schedule: ScheduledPayment[], balance: number): string {
+  if (balance <= 0 || !nextDue(schedule)) return "";
+  const rows = schedule
+    .map(
+      (x) =>
+        `<tr class="sched-${x.state}"><td>${esc(fmtDate(x.due_date))}</td><td><span class="badge ${x.state === "pagado" ? "ok" : x.state === "pendiente" ? "soft" : "pending"}">${SCHEDULE_LABEL[x.state]}</span></td><td class="num">${esc(fmtMoney(x.state === "pagado" ? x.amount_cents : Math.min(x.remaining_cents, balance)))}</td></tr>`,
+    )
+    .join("");
+  return `
+  <h2>Tus abonos programados</h2>
+  <table class="list schedule"><thead><tr><th>Fecha</th><th>Estado</th><th class="num">Abono</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+interface NoticeTarget {
+  kind: "pago" | "abono";
+  date: string;
+  amount: number;
+}
+
+/** Qué recordar en el aviso: el abono programado sin cubrir o la fecha límite de compra, la que llegue antes. */
+export function noticeTarget(client: { balance_cents: number; next_due_date: string | null }, schedule: ScheduledPayment[]): NoticeTarget | null {
+  if (client.balance_cents <= 0) return null;
+  const n = nextDue(schedule);
+  const abono: NoticeTarget | null = n ? { kind: "abono", date: n.due_date, amount: Math.min(n.remaining_cents, client.balance_cents) } : null;
+  const pago: NoticeTarget | null = client.next_due_date ? { kind: "pago", date: client.next_due_date, amount: client.balance_cents } : null;
+  if (abono && pago) return abono.date <= pago.date ? abono : pago;
+  return abono ?? pago;
 }
 
 /** Días que faltan para el día de pago: 0 es hoy y un número negativo, que ya pasó. */
@@ -307,18 +345,34 @@ function renderPaymentNotice(
   whatsapp: string,
   client: NonNullable<Awaited<ReturnType<typeof getClientSummary>>>,
   today: string,
+  target: NoticeTarget | null,
 ): string {
-  if (!client.next_due_date || client.balance_cents <= 0) return "";
-  const days = daysUntil(client.next_due_date, today);
+  if (!target) return "";
+  const days = daysUntil(target.date, today);
   if (days > NOTICE_DAYS_BEFORE) return "";
-  const date = esc(fmtDate(client.next_due_date));
-  const title = days < 0 ? "Tu pago está vencido" : days === 0 ? "¡Hoy es tu día de pago!" : "Tu día de pago se acerca";
+  const date = esc(fmtDate(target.date));
+  const abono = target.kind === "abono";
+  const title = abono
+    ? days < 0
+      ? "Tu abono está pendiente"
+      : days === 0
+        ? "¡Hoy toca tu abono!"
+        : "Tu abono se acerca"
+    : days < 0
+      ? "Tu pago está vencido"
+      : days === 0
+        ? "¡Hoy es tu día de pago!"
+        : "Tu día de pago se acerca";
+  const what = abono ? "Tu abono" : "Tu fecha límite";
   const when =
     days < 0
-      ? `Tu fecha límite fue el ${date}.`
+      ? `${abono ? "Tu abono era" : "Tu fecha límite fue"} el ${date}.`
       : days === 0
-        ? `Tu fecha límite es hoy, ${date}.`
-        : `Tu fecha límite es el ${date} (${days === 1 ? "mañana" : `en ${days} días`}).`;
+        ? `${what} es hoy, ${date}.`
+        : `${what} es el ${date} (${days === 1 ? "mañana" : `en ${days} días`}).`;
+  const amount = abono
+    ? `<p class="notice-amount"><span>Abono programado</span><strong>${esc(fmtMoney(target.amount))}</strong><small>Saldo total: ${esc(fmtMoney(client.balance_cents))}</small></p>`
+    : `<p class="notice-amount"><span>Saldo pendiente</span><strong>${esc(fmtMoney(client.balance_cents))}</strong></p>`;
   const wa = /^\d{10,15}$/.test(whatsapp)
     ? `<a class="btn notice-wa" href="https://wa.me/${whatsapp}?text=${encodeURIComponent(`Hola ${business}, soy ${client.name}. Quiero hacer mi pago.`)}" target="_blank" rel="noopener noreferrer">Avisar a la tienda por WhatsApp</a>`
     : "";
@@ -330,7 +384,7 @@ function renderPaymentNotice(
       <p class="payday-kicker">✦ Aviso de pago ✦</p>
       <h2 id="aviso-pago-titulo">${title}</h2>
       <p>${when}</p>
-      <p class="notice-amount"><span>Saldo pendiente</span><strong>${esc(fmtMoney(client.balance_cents))}</strong></p>
+      ${amount}
       <div class="notice-actions">
         ${wa}
         <button class="btn" value="ok" autofocus>Entendido</button>
