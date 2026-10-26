@@ -113,7 +113,32 @@ function kaching(ctx) {
   const installed = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
   const supported = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
 
-  const say = (text) => (msg.textContent = text);
+  const say = (text) => {
+    msg.textContent = text;
+    help.hidden = true;
+  };
+  // Pasos para desbloquear el permiso cuando el navegador ya no muestra la pregunta.
+  const help = document.createElement("ol");
+  help.className = "avisos-help small";
+  help.hidden = true;
+  on.before(help);
+  const blocked = (lead) => {
+    msg.textContent = lead + " (estado: " + Notification.permission + ")";
+    help.replaceChildren(
+      ...[
+        "Toca el ícono que está a la izquierda de la dirección, arriba (o la campanita tachada si aparece).",
+        "Entra a Permisos o Notificaciones y elige Permitir.",
+        "Revisa Ajustes del celular → Aplicaciones → tu navegador (Chrome o Samsung Internet) → Notificaciones: deben estar activadas. Si están apagadas, el navegador no te puede preguntar.",
+        "En Chrome: menú ⋮ → Configuración → Configuración de sitios → Notificaciones. Debe estar activado “Los sitios pueden pedir enviar notificaciones” y apagado “Usar mensajes más discretos”.",
+        "Regresa aquí y toca el botón otra vez.",
+      ].map((t) => {
+        const li = document.createElement("li");
+        li.textContent = t;
+        return li;
+      }),
+    );
+    help.hidden = false;
+  };
   const show = (subscribed) => {
     on.hidden = subscribed;
     off.hidden = !subscribed;
@@ -138,6 +163,11 @@ function kaching(ctx) {
   const post = (path, body) =>
     fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), credentials: "same-origin" });
 
+  function notSubscribed() {
+    show(false);
+    if (Notification.permission === "denied") blocked("Los avisos de BLOOM están bloqueados en este navegador. Para activarlos:");
+  }
+
   const ready = navigator.serviceWorker.register("/portal-sw.js", { scope: "/cuenta" }).then(() => navigator.serviceWorker.ready);
   ready
     .then((reg) => reg.pushManager.getSubscription())
@@ -145,16 +175,20 @@ function kaching(ctx) {
       if (sub && Notification.permission === "granted") {
         show(true);
         post("/cuenta/avisos", sub.toJSON()).catch(() => {}); // por si el enlace se regeneró
-      } else show(false);
+      } else notSubscribed();
     })
-    .catch(() => show(false));
+    .catch(notSubscribed);
 
   on.addEventListener("click", async () => {
     on.disabled = true;
     try {
-      const perm = await Notification.requestPermission();
+      const perm = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
+      if (perm === "denied") {
+        blocked("Tu navegador tiene bloqueados los avisos de BLOOM, por eso no te preguntó. Para activarlos:");
+        return;
+      }
       if (perm !== "granted") {
-        say("No se activaron. Si los bloqueaste, permítelos en los ajustes del navegador para este sitio.");
+        blocked("No se eligió “Permitir”. Si no viste la pregunta, tu navegador la ocultó. Para activarlos:");
         return;
       }
       const reg = await ready;
