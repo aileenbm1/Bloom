@@ -1,6 +1,7 @@
 import { SELF, env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { daysUntil, localToday } from "../src/routes/portal";
+import { addDays, coverSchedule, planDates } from "../src/lib/schedule";
 import { BASE, PASSWORD, cookieFrom, ensureAdmin, login, newClient, newPurchase, openPortal, rawLogin } from "./helpers";
 
 describe("1 · Autenticación administrativa", () => {
@@ -583,5 +584,80 @@ describe("Eliminar clientes", () => {
 
     const log = await env.DB.prepare(`SELECT action FROM audit_log WHERE entity_id = ?1 AND action LIKE 'cliente_%' ORDER BY id`).bind(id).all<{ action: string }>();
     expect(log.results.map((r) => r.action)).toEqual(["cliente_creado", "cliente_eliminado", "cliente_recuperado", "cliente_eliminado"]);
+  });
+});
+
+describe("Abonos programados", () => {
+  it("reparte lo pagado en orden y calcula fechas mensuales", () => {
+    const rows = ["2026-11-01", "2026-11-15", "2026-11-29"].map((d, i) => ({ id: String(i), due_date: d, amount_cents: 20000, rescheduled_from: null }));
+    const s = coverSchedule(rows, 30000, 30000, "2026-11-20");
+    expect(s.map((x) => [x.state, x.remaining_cents])).toEqual([
+      ["pagado", 0],
+      ["vencido", 10000],
+      ["pendiente", 20000],
+    ]);
+    expect(coverSchedule(rows, 0, 0, "2026-12-31").every((x) => x.state === "pagado")).toBe(true);
+    expect(planDates("2026-01-31", "mensual", 3)).toEqual(["2026-01-31", "2026-02-28", "2026-03-31"]);
+    expect(planDates("2026-11-01", "una_vez", 9)).toEqual(["2026-11-01"]);
+  });
+
+  it("el admin programa, reprograma y quita abonos; la clienta los ve y recibe el aviso", async () => {
+    const s = await login();
+    const today = localToday();
+    const c = await newClient(s, "Carmen Calendario");
+    const id = c.client.id;
+    await newPurchase(s, id, [{ description: "Abrigo", unit_price: "900" }], { purchase_date: today });
+    const base = `/api/admin/clients/${id}/schedule`;
+
+    expect((await s.json("POST", base, { first_date: addDays(today, -1), amount: "300" })).status).toBe(400);
+    expect((await s.json("POST", base, { first_date: today, amount: "0" })).status).toBe(400);
+    const r = await s.json("POST", base, { first_date: addDays(today, 2), amount: "300", every: "semanal", count: 3 });
+    expect(r.status).toBe(201);
+    expect(r.data.schedule.map((x: any) => x.state)).toEqual(["pendiente", "pendiente", "pendiente"]);
+
+    // Portal: tabla de abonos y aviso con el importe del abono, no el saldo total.
+    let p = await openPortal(c.link);
+    expect(p.html).toContain("Tus abonos programados");
+    expect(p.html).toContain("Tu abono se acerca");
+    expect(p.html).toMatch(/Abono programado<\/span><strong>\$300\.00/);
+
+    // Reprogramar el primero a dentro de 10 días: el aviso ya no aparece (falta más de 3 días).
+    const first = r.data.schedule[0];
+    const re = await s.json("PATCH", `${base}/${first.id}`, { due_date: addDays(today, 10), amount: "250" });
+    expect(re.status).toBe(200);
+    const moved = re.data.schedule.find((x: any) => x.id === first.id);
+    expect(moved).toMatchObject({ due_date: addDays(today, 10), amount_cents: 25000, rescheduled_from: addDays(today, 2) });
+    expect((await s.json("PATCH", `${base}/${first.id}`, { due_date: addDays(today, -3) })).status).toBe(400);
+    p = await openPortal(c.link);
+    expect(p.html).not.toContain("aviso-pago");
+
+    // Un abono cubre el más próximo.
+    await s.json("POST", `/api/admin/clients/${id}/payments`, { amount: "300", paid_at: today, method: "efectivo" });
+    const d = await s.json("GET", `/api/admin/clients/${id}`);
+    expect(d.data.schedule.map((x: any) => x.state)).toEqual(["pagado", "pendiente", "pendiente"]);
+
+    // Quitar uno; otra clienta no puede tocarlo.
+    const other = await newClient(s, "Otra Persona");
+    const last = d.data.schedule[2];
+    expect((await s.json("DELETE", `/api/admin/clients/${other.client.id}/schedule/${last.id}`)).status).toBe(404);
+    const del = await s.json("DELETE", `${base}/${last.id}`);
+    expect(del.data.schedule).toHaveLength(2);
+
+    const log = await env.DB.prepare(`SELECT action FROM audit_log WHERE entity_id = ?1 AND action LIKE 'abono%prog%' OR (entity_id = ?1 AND action = 'abono_reprogramado') ORDER BY id`)
+      .bind(id)
+      .all<{ action: string }>();
+    expect(log.results.map((x) => x.action)).toEqual(["abonos_programados", "abono_reprogramado", "abono_programado_quitado"]);
+  });
+
+  it("el resumen lista los abonos que tocan hoy", async () => {
+    const s = await login();
+    const today = localToday();
+    const c = await newClient(s, "Diana Hoy");
+    await newPurchase(s, c.client.id, [{ description: "Falda", unit_price: "500" }], { purchase_date: today });
+    await s.json("POST", `/api/admin/clients/${c.client.id}/schedule`, { first_date: today, amount: "150" });
+    const d = (await s.json("GET", "/api/admin/dashboard")).data;
+    expect(d.scheduled_due).toContainEqual({ client_id: c.client.id, name: "Diana Hoy", due_date: today, remaining_cents: 15000, state: "hoy" });
+    const p = await openPortal(c.link);
+    expect(p.html).toContain("¡Hoy toca tu abono!");
   });
 });

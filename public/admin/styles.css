@@ -225,3 +225,15 @@ button.theme-toggle { min-height: 36px; width: 40px; padding: 0; background: tra
   :root[data-theme="dark"] .toast { background: #f3ecf8; color: #1a1124; }
   :root[data-theme="dark"] .topbar .logo img { filter: brightness(1.35) saturate(.9) drop-shadow(0 0 6px rgba(210, 176, 239, .25)); }
 }
+
+/* Abonos programados */
+.schedule-table { width: 100%; border-collapse: collapse; margin: 8px 0 16px; }
+.schedule-table th, .schedule-table td { padding: 8px 6px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; }
+.schedule-table .num { text-align: right; }
+.schedule-table .row-actions { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+@media (max-width: 520px) {
+  .schedule-table th:last-child { display: none; }
+  .schedule-table tr { display: grid; grid-template-columns: 1fr auto auto; }
+  .schedule-table .row-actions { grid-column: 1 / -1; justify-content: flex-start; border-bottom: 1px solid var(--line); }
+  .schedule-table td { border-bottom: none; }
+}

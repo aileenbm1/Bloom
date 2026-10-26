@@ -4,6 +4,7 @@ import { b64url, fromB64url } from "../src/lib/crypto";
 import { localToday, sendPaydayPushes, sendReminders } from "../src/lib/push";
 import type { Env } from "../src/env";
 import { BASE, login, newClient, newPurchase, openPortal } from "./helpers";
+import { addDays } from "../src/lib/schedule";
 
 const appEnv = env as unknown as Env;
 
@@ -237,5 +238,52 @@ describe("Avisos push · recordatorios desde el panel", () => {
     const stats = await s.json("GET", "/api/admin/push");
     expect(stats.status).toBe(200);
     expect(typeof stats.data.with_balance).toBe("number");
+  });
+});
+
+describe("Avisos push · abonos programados", () => {
+  // Mediodía en México del día indicado.
+  const at = (date: string) => new Date(date + "T18:00:00Z");
+
+  it("avisa el día del abono y 2 días después si no se cubrió; no si ya pagó", async () => {
+    const s = await login();
+    const today = localToday();
+    const tomorrow = addDays(today, 1);
+    const browsers: Record<string, Awaited<ReturnType<typeof fakeBrowser>>> = {};
+    for (const [name, pays] of [["Abril Abona", false], ["Berta Pagó", true]] as const) {
+      const c = await newClient(s, name);
+      await newPurchase(s, c.client.id, [{ description: "Vestido", unit_price: "1000" }], { purchase_date: today });
+      const r = await s.json("POST", `/api/admin/clients/${c.client.id}/schedule`, { first_date: tomorrow, amount: "200", every: "quincenal", count: 3 });
+      expect(r.status).toBe(201);
+      expect(r.data.schedule.map((x: any) => x.due_date)).toEqual([tomorrow, addDays(tomorrow, 14), addDays(tomorrow, 28)]);
+      if (pays) await s.json("POST", `/api/admin/clients/${c.client.id}/payments`, { amount: "200", paid_at: today, method: "efectivo" });
+      const p = await openPortal(c.link);
+      browsers[name] = await fakeBrowser();
+      await subscribe(p.cookie!, browsers[name].json);
+    }
+    const a = browsers["Abril Abona"];
+    const b = browsers["Berta Pagó"];
+
+    const day = fakePush();
+    await sendPaydayPushes(appEnv, at(tomorrow), day.fn);
+    expect(day.to(b.json.endpoint)).toHaveLength(0);
+    expect(day.to(a.json.endpoint)).toHaveLength(1);
+    const msg = await decrypt(a, day.to(a.json.endpoint)[0].body);
+    expect(msg.title).toContain("Hoy toca tu abono");
+    expect(JSON.stringify(msg)).not.toContain("200");
+
+    const same = fakePush();
+    await sendPaydayPushes(appEnv, at(tomorrow), same.fn);
+    expect(same.to(a.json.endpoint)).toHaveLength(0);
+
+    const between = fakePush();
+    await sendPaydayPushes(appEnv, at(addDays(tomorrow, 1)), between.fn);
+    expect(between.to(a.json.endpoint)).toHaveLength(0);
+
+    const late = fakePush();
+    await sendPaydayPushes(appEnv, at(addDays(tomorrow, 2)), late.fn);
+    expect(late.to(b.json.endpoint)).toHaveLength(0);
+    expect(late.to(a.json.endpoint)).toHaveLength(1);
+    expect((await decrypt(a, late.to(a.json.endpoint)[0].body)).title).toContain("sigue pendiente");
   });
 });

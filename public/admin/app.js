@@ -251,6 +251,7 @@
         tile("Cuentas al corriente", String(d.clients_settled)),
         tile("Con fecha límite vencida", String(d.clients_overdue)),
       ),
+      scheduledDueSection(d.scheduled_due || []),
       pushSection(push),
       h("h2", {}, "Mayores saldos pendientes"),
       d.top_pending.length ? clientList(d.top_pending) : h("p", { class: "muted" }, "No hay saldos pendientes."),
@@ -264,6 +265,35 @@
       ),
     );
   }
+  const SCHED = { pagado: "Cubierto", pendiente: "Próximo", hoy: "Hoy", vencido: "Vencido" };
+  const SCHED_BADGE = { pagado: "liquidada", pendiente: "sin_compras", hoy: "pendiente", vencido: "late" };
+
+  // Abonos programados que tocan hoy o ya vencieron sin cubrirse.
+  function scheduledDueSection(list) {
+    if (!list.length) return null;
+    return h(
+      "section",
+      {},
+      h("h2", {}, "Abonos programados de hoy y vencidos"),
+      h(
+        "ul",
+        { class: "client-list card", style: null },
+        list.map((x) =>
+          h(
+            "li",
+            {},
+            h(
+              "a",
+              { href: "#/cliente/" + x.client_id },
+              h("span", { class: "who" }, h("strong", {}, x.name), h("span", { class: "muted small" }, (x.state === "hoy" ? "Hoy" : "Desde el " + fdate(x.due_date)))),
+              h("span", { class: "num" }, h("span", { class: "badge " + SCHED_BADGE[x.state] }, SCHED[x.state] + " " + money(x.remaining_cents))),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   function pushSection(push) {
     return h(
       "section",
@@ -519,6 +549,7 @@
       linkSection(c, d.link),
       clientPushSection(c, d.push),
       paymentForm(c, activePurchases),
+      scheduleSection(c, d.schedule || []),
       purchaseForm(c),
       h("h2", {}, "Abonos"),
       paymentsTable(c, d.payments, d.purchases),
@@ -657,6 +688,136 @@
       ),
       h("div", { class: "field" }, h("label", {}, "Nota (opcional)"), h("input", { name: "note", maxlength: 300, value: defaults.note || "" })),
     ];
+  }
+
+  // ---------- abonos programados ----------
+  function scheduleSection(c, schedule) {
+    const box = h(
+      "section",
+      { class: "card no-print" },
+      h("h2", { style: null }, "Abonos programados"),
+      h(
+        "p",
+        { class: "muted small" },
+        "Pon las fechas de sus siguientes abonos. Si llega la fecha y el abono no está cubierto, a la clienta le aparece el aviso al abrir su enlace y le llega la notificación ese día (y otra vez 2 días después si sigue pendiente). Los abonos que registres los van cubriendo en orden.",
+      ),
+    );
+    if (schedule.length) {
+      box.append(
+        h(
+          "table",
+          { class: "schedule-table" },
+          h("thead", {}, h("tr", {}, h("th", {}, "Fecha"), h("th", {}, "Estado"), h("th", { class: "num" }, "Abono"), h("th", {}, ""))),
+          h(
+            "tbody",
+            {},
+            schedule.map((x) =>
+              h(
+                "tr",
+                {},
+                h("td", {}, fdate(x.due_date), x.rescheduled_from ? h("div", { class: "muted small" }, "antes " + fdate(x.rescheduled_from)) : null),
+                h("td", {}, h("span", { class: "badge " + SCHED_BADGE[x.state] }, SCHED[x.state])),
+                h("td", { class: "num" }, money(x.amount_cents), x.state !== "pagado" && x.covered_cents ? h("div", { class: "muted small" }, "faltan " + money(x.remaining_cents)) : null),
+                h(
+                  "td",
+                  { class: "row-actions" },
+                  x.state === "pagado"
+                    ? null
+                    : [
+                        h("button", { type: "button", class: "secondary small", onclick: () => reschedule(c, x) }, "Reprogramar"),
+                        h("button", { type: "button", class: "ghost small", onclick: () => unschedule(c, x) }, "Quitar"),
+                      ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+    const err = errorBox();
+    const form = h(
+      "form",
+      {},
+      h("h3", {}, schedule.length ? "Programar más abonos" : "Programar abonos"),
+      h(
+        "div",
+        { class: "form-grid" },
+        h("div", {}, h("label", { for: "sc-date" }, "Primer abono"), h("input", { id: "sc-date", name: "first_date", type: "date", required: true, min: today(), value: today() })),
+        h("div", {}, h("label", { for: "sc-amount" }, "Importe de cada abono"), h("input", { id: "sc-amount", name: "amount", inputmode: "decimal", required: true, placeholder: "0.00" })),
+        h(
+          "div",
+          {},
+          h("label", { for: "sc-every" }, "Cada cuándo"),
+          h(
+            "select",
+            { id: "sc-every", name: "every" },
+            [["una_vez", "Solo una vez"], ["semanal", "Cada semana"], ["quincenal", "Cada 15 días"], ["mensual", "Cada mes"]].map(([v, l]) => h("option", { value: v }, l)),
+          ),
+        ),
+        h("div", {}, h("label", { for: "sc-count" }, "Número de abonos"), h("input", { id: "sc-count", name: "count", type: "number", min: 1, max: 52, value: 4 })),
+      ),
+      err,
+      h("button", { type: "submit" }, "Programar"),
+    );
+    const every = form.querySelector("[name=every]");
+    const count = form.querySelector("[name=count]");
+    const sync = () => {
+      count.disabled = every.value === "una_vez";
+      count.parentElement.hidden = count.disabled;
+    };
+    every.addEventListener("change", sync);
+    sync();
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      submitting(form, async () => {
+        try {
+          const r = await api("POST", `/api/admin/clients/${c.id}/schedule`, formData(form));
+          toast(r.schedule.length === 1 ? "Abono programado" : "Abonos programados");
+          route();
+        } catch (e2) {
+          showError(err, e2);
+        }
+      });
+    });
+    box.append(form);
+    return box;
+  }
+
+  async function reschedule(c, x) {
+    const data = await confirmDialog({
+      title: "Reprogramar abono del " + fdate(x.due_date),
+      message: "La clienta verá la nueva fecha en su enlace y el aviso llegará ese día.",
+      fields: [
+        h("div", { class: "field" }, h("label", {}, "Nueva fecha"), h("input", { name: "due_date", type: "date", required: true, min: today(), value: x.due_date < today() ? today() : x.due_date })),
+        h("div", { class: "field" }, h("label", {}, "Importe"), h("input", { name: "amount", inputmode: "decimal", required: true, value: (x.amount_cents / 100).toFixed(2) })),
+      ],
+      confirmText: "Reprogramar",
+    });
+    if (!data) return;
+    try {
+      await api("PATCH", `/api/admin/clients/${c.id}/schedule/${x.id}`, data);
+      toast("Abono reprogramado");
+      route();
+    } catch (e) {
+      toast(e.message);
+    }
+  }
+
+  async function unschedule(c, x) {
+    const ok = await confirmDialog({
+      title: "Quitar abono programado",
+      message: `Se quita el abono del ${fdate(x.due_date)} por ${money(x.amount_cents)}. No cambia el saldo; solo deja de recordarse.`,
+      confirmText: "Quitar",
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await api("DELETE", `/api/admin/clients/${c.id}/schedule/${x.id}`);
+      toast("Abono programado quitado");
+      route();
+    } catch (e) {
+      toast(e.message);
+    }
   }
 
   function paymentForm(c, activePurchases) {
@@ -883,6 +1044,9 @@
     cliente_editado: "Cliente editado",
     cliente_eliminado: "Cliente eliminado",
     cliente_recuperado: "Cliente recuperado",
+    abonos_programados: "Abonos programados",
+    abono_reprogramado: "Abono reprogramado",
+    abono_programado_quitado: "Abono programado quitado",
     enlace_regenerado: "Enlace regenerado",
     enlace_revocado: "Enlace revocado",
     recordatorio_enviado: "Recordatorio de pago enviado",
@@ -906,6 +1070,9 @@
     if (d.reason) parts.push("Motivo: " + d.reason);
     if (d.username) parts.push("Usuario: " + d.username);
     if (d.name) parts.push(d.name);
+    if (d.count !== undefined && d.first_date) parts.push(`${d.count} ${d.count === 1 ? "abono" : "abonos"} desde el ${fdate(d.first_date)}`);
+    if (e.action === "abono_programado_quitado" && d.due_date) parts.push(fdate(d.due_date));
+    if (e.action === "abono_reprogramado" && d.before && d.after) parts.push(`${fdate(d.before.due_date)} ${money(d.before.amount_cents)} → ${fdate(d.after.due_date)} ${money(d.after.amount_cents)}`);
     if (d.devices !== undefined) parts.push(`Recibieron: ${d.clients} ${d.clients === 1 ? "clienta" : "clientas"} (${d.sent} de ${d.devices} dispositivos)`);
     return parts.join(" · ");
   }

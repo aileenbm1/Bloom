@@ -12,7 +12,8 @@ import {
   purchaseRemainingExpr,
 } from "../lib/db";
 import { requireAdmin } from "../lib/http";
-import { dropClientPush, ensurePushSchema, pushStats, sendReminders } from "../lib/push";
+import { dropClientPush, ensurePushSchema, localToday, pushStats, sendReminders } from "../lib/push";
+import { SCHEDULE_EVERY, ensureScheduleSchema, getSchedule, nextDue, planDates, type ScheduleEvery } from "../lib/schedule";
 import { activeLink, linkUrl, newAccessToken, revokeActiveTokens } from "../lib/links";
 import { csvResponse, money } from "../lib/csv";
 import {
@@ -32,7 +33,7 @@ import {
 export const admin = new Hono<AppEnv>();
 admin.use("*", requireAdmin);
 admin.use("*", async (c, next) => {
-  await Promise.all([ensurePushSchema(c.env.DB), ensureClientSchema(c.env.DB)]);
+  await Promise.all([ensurePushSchema(c.env.DB), ensureClientSchema(c.env.DB), ensureScheduleSchema(c.env.DB)]);
   await next();
 });
 
@@ -83,6 +84,23 @@ admin.get("/dashboard", async (c) => {
   const pending = list.filter((x) => x.status === "pendiente");
   const credit = list.filter((x) => x.status === "a_favor");
   const overdue = pending.filter((x) => x.next_due_date && x.next_due_date < today);
+  // Abonos programados que tocan hoy o ya vencieron sin cubrirse.
+  const local = localToday();
+  const { results: withDue } = await db
+    .prepare(`SELECT DISTINCT client_id FROM scheduled_payments s WHERE due_date <= ?1 AND client_id NOT IN (SELECT client_id FROM deleted_clients) LIMIT 200`)
+    .bind(local)
+    .all<{ client_id: string }>();
+  const names = new Map(list.map((x) => [x.id, x.name]));
+  const scheduledDue = (
+    await Promise.all(
+      withDue.map(async ({ client_id }) => {
+        const n = nextDue(await getSchedule(db, client_id, local));
+        return n && n.due_date <= local ? { client_id, name: names.get(client_id) ?? "", due_date: n.due_date, remaining_cents: n.remaining_cents, state: n.state } : null;
+      }),
+    )
+  )
+    .filter((x) => x !== null)
+    .sort((x, y) => x.due_date.localeCompare(y.due_date));
   return c.json({
     purchases_cents: t.purchases_cents,
     paid_cents: t.paid_cents,
@@ -96,6 +114,7 @@ admin.get("/dashboard", async (c) => {
     clients_settled: list.filter((x) => x.status === "liquidada").length,
     clients_credit: credit.length,
     clients_overdue: overdue.length,
+    scheduled_due: scheduledDue,
     top_pending: pending.sort((a, b) => b.balance_cents - a.balance_cents).slice(0, 5),
   });
 });
@@ -132,17 +151,19 @@ admin.get("/clients/:id", async (c) => {
   await requireClient(db, id);
   const client = await getClientSummary(db, id);
   if (!client) throw new HttpError(404, "Cliente no encontrado");
-  const [purchases, payments, link, push] = await Promise.all([
+  const [purchases, payments, link, push, schedule] = await Promise.all([
     getPurchases(db, id),
     getPayments(db, id),
     activeLink(db, c.env.APP_SECRET, id),
     pushStats(db, id),
+    getSchedule(db, id, localToday()),
   ]);
   return c.json({
     client,
     purchases,
     payments,
     push: { devices: push.devices },
+    schedule,
     link: link
       ? { active: true, url: link.token ? linkUrl(new URL(c.req.url).origin, link.token) : null, created_at: link.created_at, last_used_at: link.last_used_at }
       : { active: false, url: null },
@@ -165,6 +186,107 @@ admin.patch("/clients/:id", async (c) => {
     audit(db, { adminId: c.get("admin").id, action: "cliente_editado", entityType: "client", entityId: id, details: { before, after }, ipHash: c.get("ipHash") }),
   ]);
   return c.json({ client: await getClientSummary(db, id) });
+});
+
+// --- Abonos programados ------------------------------------------------------------
+
+/** Fecha de abono programado: válida y no anterior a hoy (hora de México). */
+function futureDate(field: string, v: unknown): string {
+  const d = isoDate(field, v, { required: true })!;
+  if (d < localToday()) throw new ValidationError(field, "La fecha no puede ser anterior a hoy");
+  return d;
+}
+
+async function loadScheduled(db: D1Database, clientId: string, sid: string) {
+  const row = await db
+    .prepare(`SELECT id, due_date, amount_cents FROM scheduled_payments WHERE id = ?1 AND client_id = ?2`)
+    .bind(sid, clientId)
+    .first<{ id: string; due_date: string; amount_cents: number }>();
+  if (!row) throw new HttpError(404, "Abono programado no encontrado");
+  return row;
+}
+
+/** Programa uno o varios abonos: primera fecha, importe y cada cuánto. */
+admin.post("/clients/:id/schedule", async (c) => {
+  const id = idParam(c.req.param("id"));
+  const db = c.env.DB;
+  await requireClient(db, id);
+  const b = await body(c);
+  const first = futureDate("first_date", b.first_date);
+  const amount = parseMoney("amount", b.amount);
+  const every = (SCHEDULE_EVERY as readonly string[]).includes(String(b.every)) ? (b.every as ScheduleEvery) : "una_vez";
+  const count = every === "una_vez" ? 1 : integer("count", b.count ?? 1, 1, 52);
+  const existing = await db.prepare(`SELECT COUNT(*) AS n FROM scheduled_payments WHERE client_id = ?1`).bind(id).first<{ n: number }>();
+  if ((existing?.n ?? 0) + count > 104) throw new ValidationError("count", "Demasiados abonos programados para esta clienta");
+  const a = c.get("admin");
+  const today = localToday();
+  const dates = planDates(first, every, count);
+  await db.batch([
+    ...dates.map((d) =>
+      db
+        .prepare(`INSERT INTO scheduled_payments (id, client_id, due_date, amount_cents, created_on, created_by) VALUES (?1, ?2, ?3, ?4, ?5, ?6)`)
+        .bind(crypto.randomUUID(), id, d, amount, today, a.id),
+    ),
+    audit(db, {
+      adminId: a.id,
+      action: "abonos_programados",
+      entityType: "client",
+      entityId: id,
+      details: { amount_cents: amount, count: dates.length, first_date: first, every },
+      ipHash: c.get("ipHash"),
+    }),
+  ]);
+  return c.json({ schedule: await getSchedule(db, id, today) }, 201);
+});
+
+/** Reprograma un abono: nueva fecha y/o importe. */
+admin.patch("/clients/:id/schedule/:sid", async (c) => {
+  const id = idParam(c.req.param("id"));
+  const sid = idParam(c.req.param("sid"));
+  const db = c.env.DB;
+  await requireClient(db, id);
+  const before = await loadScheduled(db, id, sid);
+  const b = await body(c);
+  const due = b.due_date !== undefined ? futureDate("due_date", b.due_date) : before.due_date;
+  const amount = b.amount !== undefined && b.amount !== "" ? parseMoney("amount", b.amount) : before.amount_cents;
+  await db.batch([
+    db
+      .prepare(
+        `UPDATE scheduled_payments SET due_date = ?1, amount_cents = ?2,
+           rescheduled_from = CASE WHEN ?1 <> due_date THEN COALESCE(rescheduled_from, due_date) ELSE rescheduled_from END
+         WHERE id = ?3`,
+      )
+      .bind(due, amount, sid),
+    audit(db, {
+      adminId: c.get("admin").id,
+      action: "abono_reprogramado",
+      entityType: "client",
+      entityId: id,
+      details: { before: { due_date: before.due_date, amount_cents: before.amount_cents }, after: { due_date: due, amount_cents: amount } },
+      ipHash: c.get("ipHash"),
+    }),
+  ]);
+  return c.json({ schedule: await getSchedule(db, id, localToday()) });
+});
+
+admin.delete("/clients/:id/schedule/:sid", async (c) => {
+  const id = idParam(c.req.param("id"));
+  const sid = idParam(c.req.param("sid"));
+  const db = c.env.DB;
+  await requireClient(db, id);
+  const before = await loadScheduled(db, id, sid);
+  await db.batch([
+    db.prepare(`DELETE FROM scheduled_payments WHERE id = ?1`).bind(sid),
+    audit(db, {
+      adminId: c.get("admin").id,
+      action: "abono_programado_quitado",
+      entityType: "client",
+      entityId: id,
+      details: { due_date: before.due_date, amount_cents: before.amount_cents },
+      ipHash: c.get("ipHash"),
+    }),
+  ]);
+  return c.json({ schedule: await getSchedule(db, id, localToday()) });
 });
 
 // --- Eliminar y recuperar ---------------------------------------------------------
