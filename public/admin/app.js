@@ -367,6 +367,62 @@
     );
   }
 
+  function deletedList(list) {
+    return h(
+      "ul",
+      { class: "client-list card", style: null },
+      list.map((c) =>
+        h(
+          "li",
+          { class: "deleted-row" },
+          h("span", { class: "who" }, h("strong", {}, c.name), h("span", { class: "muted small" }, (c.phone || "Sin teléfono") + " · " + balanceLabel(c))),
+          h("button", { type: "button", class: "secondary", onclick: () => restoreClient(c) }, "Recuperar"),
+        ),
+      ),
+    );
+  }
+
+  async function restoreClient(c) {
+    const ok = await confirmDialog({
+      title: "Recuperar a " + c.name,
+      message: "Volverá a aparecer en la lista, los totales y los avisos. Su enlace anterior sigue revocado: genera uno nuevo para enviárselo.",
+      confirmText: "Recuperar",
+    });
+    if (!ok) return;
+    try {
+      await api("POST", `/api/admin/clients/${c.id}/restore`, {});
+      toast("Cliente recuperado");
+      location.hash = "#/cliente/" + c.id;
+    } catch (e) {
+      toast(e.message);
+    }
+  }
+
+  async function deleteClient(c) {
+    const owes = c.balance_cents > 0;
+    const ok = await confirmDialog({
+      title: "Eliminar a " + c.name,
+      message:
+        (owes ? "Todavía debe " + money(c.balance_cents) + ". " : "") +
+        "Dejará de aparecer en la lista, los totales, las exportaciones y los avisos, y su enlace dejará de funcionar. Sus compras y abonos se conservan en el historial y puedes recuperarla desde el filtro «Eliminadas».",
+      fields: [h("div", { class: "field" }, h("label", {}, "Escribe el nombre para confirmar"), h("input", { name: "confirm_name", required: true, autocomplete: "off" }))],
+      confirmText: "Eliminar",
+      danger: true,
+    });
+    if (!ok) return;
+    if ((ok.confirm_name || "").trim().toLowerCase() !== c.name.trim().toLowerCase()) {
+      toast("El nombre no coincide; no se eliminó");
+      return;
+    }
+    try {
+      await api("DELETE", `/api/admin/clients/${c.id}`);
+      toast("Cliente eliminado");
+      location.hash = "#/clientes";
+    } catch (e) {
+      toast(e.message);
+    }
+  }
+
   // ---------- clientes ----------
   async function viewClients() {
     const params = new URLSearchParams((location.hash.split("?")[1]) || "");
@@ -376,7 +432,7 @@
     const filter = h(
       "select",
       { name: "status", "aria-label": "Filtrar" },
-      [["", "Todas"], ["pendiente", "Deben"], ["liquidada", "Al corriente"], ["a_favor", "Con saldo a favor"], ["sin_compras", "Sin compras"]].map(([v, l]) =>
+      [["", "Todas"], ["pendiente", "Deben"], ["liquidada", "Al corriente"], ["a_favor", "Con saldo a favor"], ["sin_compras", "Sin compras"], ["eliminadas", "Eliminadas"]].map(([v, l]) =>
         h("option", { value: v, selected: v === status }, l),
       ),
     );
@@ -429,7 +485,7 @@
     const data = await api("GET", "/api/admin/clients?" + qs);
     listBox.replaceChildren(
       h("p", { class: "muted small" }, data.clients.length + " cuenta(s)"),
-      data.clients.length ? clientList(data.clients) : h("p", { class: "muted" }, "Sin resultados."),
+      data.clients.length ? (status === "eliminadas" ? deletedList(data.clients) : clientList(data.clients)) : h("p", { class: "muted" }, "Sin resultados."),
     );
   }
 
@@ -458,6 +514,7 @@
         { class: "actions no-print" },
         h("button", { type: "button", onclick: () => window.print() }, "Imprimir / PDF estado de cuenta"),
         h("button", { type: "button", class: "secondary", onclick: () => editClient(c) }, "Editar datos"),
+        h("button", { type: "button", class: "danger", onclick: () => deleteClient(c) }, "Eliminar cliente"),
       ),
       linkSection(c, d.link),
       clientPushSection(c, d.push),
@@ -824,6 +881,8 @@
     cambio_contrasena: "Cambio de contraseña",
     cliente_creado: "Cliente registrado",
     cliente_editado: "Cliente editado",
+    cliente_eliminado: "Cliente eliminado",
+    cliente_recuperado: "Cliente recuperado",
     enlace_regenerado: "Enlace regenerado",
     enlace_revocado: "Enlace revocado",
     recordatorio_enviado: "Recordatorio de pago enviado",

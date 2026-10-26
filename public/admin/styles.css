@@ -6,6 +6,7 @@
   --muted: #6b5a78;
   --line: #e6d7f1;
   --brand: #6a2f8f;
+  --brand-text: #6a2f8f;
   --brand-ink: #ffffff;
   --brand-soft: #e6d7f1;
   --gold: #d4b574;
@@ -32,10 +33,10 @@ body {
 }
 h1, h2, h3 { line-height: 1.2; margin: 0 0 .6rem; }
 h1, h2 { font-family: "Playfair Display", Georgia, serif; font-weight: 600; }
-h1 { font-size: 1.5rem; color: var(--brand); }
+h1 { font-size: 1.5rem; color: var(--brand-text); }
 h2 { font-size: 1.15rem; margin-top: 1.6rem; }
 h3 { font-size: 1rem; }
-a { color: var(--brand); }
+a { color: var(--brand-text); }
 .wrap { max-width: 1080px; margin: 0 auto; padding: 16px; }
 .muted { color: var(--muted); }
 .small { font-size: .85rem; }
@@ -51,7 +52,7 @@ a { color: var(--brand); }
 .topbar .logo img { height: 44px; width: auto; }
 .topbar nav { display: flex; gap: 4px; flex: 1; overflow-x: auto; }
 .topbar nav a { padding: 6px 10px; border-radius: 8px; color: var(--ink); text-decoration: none; white-space: nowrap; }
-.topbar nav a.active { background: var(--brand-soft); color: var(--brand); font-weight: 600; }
+.topbar nav a.active { background: var(--brand-soft); color: var(--brand-text); font-weight: 600; }
 
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); margin-bottom: 12px; }
 .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
@@ -66,7 +67,7 @@ button, .btn {
   min-height: 40px; padding: 8px 14px; border-radius: 10px; border: 1px solid var(--brand);
   background: var(--brand); color: var(--brand-ink); font: inherit; font-weight: 600; cursor: pointer; text-decoration: none;
 }
-button.secondary, .btn.secondary { background: var(--surface); color: var(--brand); }
+button.secondary, .btn.secondary { background: var(--surface); color: var(--brand-text); }
 button.ghost { background: transparent; color: var(--ink); border-color: var(--line); }
 button.danger { background: var(--surface); color: var(--danger); border-color: var(--danger); }
 button.small { min-height: 32px; padding: 4px 10px; font-size: .85rem; }
@@ -97,7 +98,7 @@ tr.voided td.keep, tr.cancelled td.keep { text-decoration: none; }
 
 .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: .8rem; font-weight: 600; }
 .badge.pendiente { background: var(--warn-soft); color: var(--warn); }
-.badge.liquidada { background: var(--brand-soft); color: var(--brand); }
+.badge.liquidada { background: var(--brand-soft); color: var(--brand-text); }
 .badge.a_favor { background: var(--ok-soft); color: var(--ok); }
 .badge.sin_compras { background: #eee; color: var(--muted); }
 .badge.late { background: var(--danger-soft); color: var(--danger); }
@@ -106,13 +107,14 @@ tr.voided td.keep, tr.cancelled td.keep { text-decoration: none; }
 .client-list li a { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 12px; color: inherit; text-decoration: none; border-bottom: 1px solid var(--line); }
 .client-list li a:hover { background: var(--brand-soft); }
 .client-list .who strong { display: block; }
+.client-list li.deleted-row { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 12px; border-bottom: 1px solid var(--line); }
 
 .audit-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
 .audit-card { display: flex; flex-direction: column; gap: 2px; padding: 14px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); color: inherit; text-decoration: none; }
 button.audit-card { align-items: stretch; justify-content: flex-start; min-height: 0; font-weight: 400; text-align: left; cursor: pointer; }
 .audit-card:hover, .audit-card:focus-visible, .audit-card.selected { border-color: var(--brand); background: var(--brand-soft); }
 .audit-card strong { font-size: 1.05rem; overflow-wrap: anywhere; }
-.audit-count { margin-top: 8px; color: var(--brand); font-weight: 600; }
+.audit-count { margin-top: 8px; color: var(--brand-text); font-weight: 600; }
 .audit-day { display: flex; align-items: baseline; gap: 4px; }
 .audit-entries { padding: 0; overflow: hidden; }
 .audit-entry { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line); color: inherit; text-decoration: none; }
@@ -188,3 +190,38 @@ dialog::backdrop { background: rgba(43, 14, 63, .4); }
 }
 .install span { flex: 1; font-size: .9rem; }
 .install #install-close { padding: 4px 10px; font-size: 1.1rem; line-height: 1; }
+
+/* Botón de modo claro / oscuro */
+button.theme-toggle { min-height: 36px; width: 40px; padding: 0; background: transparent; border-color: var(--line); color: var(--ink); font-size: 1.05rem; }
+
+/* --- Modo oscuro: violeta profundo con lavanda y dorado del logo ---
+   El modo claro no cambia; solo se redefinen los colores cuando data-theme="dark". */
+@media screen {
+  :root[data-theme="dark"] {
+    --bg: #1a1124;
+    --surface: #251933;
+    --ink: #f3ecf8;
+    --muted: #b9a8c9;
+    --line: #3d2c50;
+    --brand: #8a57b5;
+    --brand-text: #d2b0ef;
+    --brand-ink: #ffffff;
+    --brand-soft: #3a2752;
+    --gold: #d9bd7e;
+    --ok: #74d3a0;
+    --ok-soft: #173427;
+    --warn: #f2b866;
+    --warn-soft: #3b2b14;
+    --danger: #ff8f86;
+    --danger-soft: #3f1d22;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .35), 0 4px 16px rgba(0, 0, 0, .25);
+    color-scheme: dark;
+  }
+  :root[data-theme="dark"] input, :root[data-theme="dark"] select, :root[data-theme="dark"] textarea { background: #1f1529; }
+  :root[data-theme="dark"] .badge.sin_compras { background: #33263f; }
+  :root[data-theme="dark"] .notice { color: #f6dcae; }
+  :root[data-theme="dark"] dialog { background: var(--surface); color: var(--ink); }
+  :root[data-theme="dark"] dialog::backdrop { background: rgba(8, 4, 14, .6); }
+  :root[data-theme="dark"] .toast { background: #f3ecf8; color: #1a1124; }
+  :root[data-theme="dark"] .topbar .logo img { filter: brightness(1.35) saturate(.9) drop-shadow(0 0 6px rgba(210, 176, 239, .25)); }
+}

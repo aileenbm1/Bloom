@@ -534,3 +534,54 @@ describe("Desarrollo en GitHub Codespaces", () => {
     expect(prod.status).toBe(403);
   });
 });
+
+describe("Eliminar clientes", () => {
+  it("la oculta de listas, totales y exportaciones, revoca su enlace y se puede recuperar", async () => {
+    const s = await login();
+    const c = await newClient(s, "Karla Eliminada", "5511112222");
+    const id = c.client.id;
+    await newPurchase(s, id, [{ description: "Blusa", unit_price: "500" }]);
+    await s.json("POST", `/api/admin/clients/${id}/payments`, { amount: "100", paid_at: new Date().toISOString().slice(0, 10), method: "efectivo" });
+    const p = await openPortal(c.link);
+    const before = (await s.json("GET", "/api/admin/dashboard")).data;
+
+    expect((await s.json("DELETE", `/api/admin/clients/${id}`)).status).toBe(200);
+
+    const names = (r: any) => r.data.clients.map((x: any) => x.name);
+    expect(names(await s.json("GET", "/api/admin/clients"))).not.toContain("Karla Eliminada");
+    expect(names(await s.json("GET", "/api/admin/clients?q=karla"))).not.toContain("Karla Eliminada");
+    expect(names(await s.json("GET", "/api/admin/clients?status=eliminadas"))).toContain("Karla Eliminada");
+    expect((await s.json("GET", `/api/admin/clients/${id}`)).status).toBe(404);
+    expect((await s.json("POST", `/api/admin/clients/${id}/payments`, { amount: "1", paid_at: "2026-10-04", method: "efectivo" })).status).toBe(404);
+
+    const after = (await s.json("GET", "/api/admin/dashboard")).data;
+    expect(before.purchases_cents - after.purchases_cents).toBe(50000);
+    expect(before.paid_cents - after.paid_cents).toBe(10000);
+    expect(before.balance_cents - after.balance_cents).toBe(40000);
+    expect(before.paid_month_cents - after.paid_month_cents).toBe(10000);
+    for (const f of ["clientes", "compras", "abonos"]) {
+      expect(await (await s.get(`/api/admin/export/${f}.csv`)).text()).not.toContain("Karla");
+    }
+
+    // El enlace y la cookie ya emitida dejan de funcionar.
+    expect((await openPortal(c.link)).first.status).toBe(404);
+    expect((await SELF.fetch(BASE + "/cuenta", { headers: { Cookie: `__Host-bloom_cuenta=${p.cookie}` } })).status).toBe(404);
+
+    // Las compras y abonos siguen en la base (son inmutables).
+    const kept = await env.DB.prepare(`SELECT COUNT(*) AS n FROM payments WHERE client_id = ?1`).bind(id).first<{ n: number }>();
+    expect(kept!.n).toBe(1);
+
+    // Recuperar la regresa con todo su historial.
+    expect((await s.json("POST", `/api/admin/clients/${id}/restore`, {})).status).toBe(200);
+    expect((await s.json("POST", `/api/admin/clients/${id}/restore`, {})).status).toBe(404);
+    const back = await s.json("GET", `/api/admin/clients/${id}`);
+    expect(back.status).toBe(200);
+    expect(back.data.client.balance_cents).toBe(40000);
+    expect(back.data.link.active).toBe(false);
+    expect((await s.json("DELETE", `/api/admin/clients/${id}`)).status).toBe(200);
+    expect((await s.json("DELETE", `/api/admin/clients/${id}`)).status).toBe(404);
+
+    const log = await env.DB.prepare(`SELECT action FROM audit_log WHERE entity_id = ?1 AND action LIKE 'cliente_%' ORDER BY id`).bind(id).all<{ action: string }>();
+    expect(log.results.map((r) => r.action)).toEqual(["cliente_creado", "cliente_eliminado", "cliente_recuperado", "cliente_eliminado"]);
+  });
+});

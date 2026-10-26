@@ -189,9 +189,10 @@ function page(c: Context<AppEnv>, status: number, title: string, content: string
 <link rel="manifest" href="/portal.webmanifest">
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=2">
 <link rel="stylesheet" href="/portal.css">
+<script src="/tema.js"></script>
 </head>
 <body>
-<header class="brand"><img class="logo" src="/logo-wordmark.png" alt="${brand}" width="102" height="56"></header>
+<header class="brand"><img class="logo" src="/logo-wordmark.png" alt="${brand}" width="102" height="56"><button type="button" class="theme-toggle no-print" data-action="tema" aria-label="Cambiar tema">🌙</button></header>
 <main class="wrap">${content}</main>
 <script src="/portal.js"></script>
 </body>

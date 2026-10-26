@@ -5,7 +5,9 @@ import {
   getClientSummary,
   getPayments,
   getPurchases,
+  ensureClientSchema,
   listClientSummaries,
+  NOT_DELETED,
   nowIso,
   purchaseRemainingExpr,
 } from "../lib/db";
@@ -30,7 +32,7 @@ import {
 export const admin = new Hono<AppEnv>();
 admin.use("*", requireAdmin);
 admin.use("*", async (c, next) => {
-  await ensurePushSchema(c.env.DB);
+  await Promise.all([ensurePushSchema(c.env.DB), ensureClientSchema(c.env.DB)]);
   await next();
 });
 
@@ -44,8 +46,12 @@ function idParam(v: string | undefined): string {
   return v;
 }
 
+// Compras y abonos de clientas no eliminadas (para totales del resumen).
+const LIVE_CLIENT = `client_id NOT IN (SELECT client_id FROM deleted_clients)`;
+
+/** La clienta existe y no fue eliminada. */
 async function requireClient(db: D1Database, id: string) {
-  const exists = await db.prepare(`SELECT id FROM clients WHERE id = ?1`).bind(id).first();
+  const exists = await db.prepare(`SELECT id FROM clients c WHERE c.id = ?1 AND ${NOT_DELETED}`).bind(id).first();
   if (!exists) throw new HttpError(404, "Cliente no encontrado");
 }
 
@@ -63,13 +69,13 @@ admin.get("/dashboard", async (c) => {
   const [totals, month, clients] = await db.batch([
     db.prepare(
       `SELECT
-         COALESCE((SELECT SUM(total_cents) FROM purchases WHERE status = 'active'), 0) AS purchases_cents,
-         COALESCE((SELECT SUM(amount_cents) FROM payments WHERE status = 'valid'), 0) AS paid_cents`,
+         COALESCE((SELECT SUM(total_cents) FROM purchases WHERE status = 'active' AND ${LIVE_CLIENT}), 0) AS purchases_cents,
+         COALESCE((SELECT SUM(amount_cents) FROM payments WHERE status = 'valid' AND ${LIVE_CLIENT}), 0) AS paid_cents`,
     ),
     db
-      .prepare(`SELECT COALESCE(SUM(amount_cents), 0) AS paid_month_cents, COUNT(*) AS payments_month FROM payments WHERE status = 'valid' AND paid_at >= ?1`)
+      .prepare(`SELECT COALESCE(SUM(amount_cents), 0) AS paid_month_cents, COUNT(*) AS payments_month FROM payments WHERE status = 'valid' AND paid_at >= ?1 AND ${LIVE_CLIENT}`)
       .bind(monthStart),
-    db.prepare(`SELECT COUNT(*) AS n FROM clients`),
+    db.prepare(`SELECT COUNT(*) AS n FROM clients c WHERE ${NOT_DELETED}`),
   ]);
   const t = totals.results[0] as { purchases_cents: number; paid_cents: number };
   const m = month.results[0] as { paid_month_cents: number; payments_month: number };
@@ -99,7 +105,8 @@ admin.get("/dashboard", async (c) => {
 admin.get("/clients", async (c) => {
   const q = c.req.query("q") ?? "";
   const status = c.req.query("status") ?? "";
-  return c.json({ clients: await listClientSummaries(c.env.DB, { q, status }) });
+  const deleted = status === "eliminadas";
+  return c.json({ clients: await listClientSummaries(c.env.DB, { q, status: deleted ? "" : status, deleted }) });
 });
 
 admin.post("/clients", async (c) => {
@@ -122,6 +129,7 @@ admin.post("/clients", async (c) => {
 admin.get("/clients/:id", async (c) => {
   const id = idParam(c.req.param("id"));
   const db = c.env.DB;
+  await requireClient(db, id);
   const client = await getClientSummary(db, id);
   if (!client) throw new HttpError(404, "Cliente no encontrado");
   const [purchases, payments, link, push] = await Promise.all([
@@ -155,6 +163,51 @@ admin.patch("/clients/:id", async (c) => {
   await db.batch([
     db.prepare(`UPDATE clients SET name = ?1, phone = ?2, notes = ?3, updated_at = ?4 WHERE id = ?5`).bind(after.name, after.phone, after.notes, nowIso(), id),
     audit(db, { adminId: c.get("admin").id, action: "cliente_editado", entityType: "client", entityId: id, details: { before, after }, ipHash: c.get("ipHash") }),
+  ]);
+  return c.json({ client: await getClientSummary(db, id) });
+});
+
+// --- Eliminar y recuperar ---------------------------------------------------------
+
+/**
+ * Elimina a la clienta del panel. No borra compras, abonos ni auditoría (son inmutables):
+ * deja de aparecer en listas, totales, exportaciones y avisos, y su enlace se revoca.
+ */
+admin.delete("/clients/:id", async (c) => {
+  const id = idParam(c.req.param("id"));
+  const db = c.env.DB;
+  await requireClient(db, id);
+  const client = (await getClientSummary(db, id))!;
+  const a = c.get("admin");
+  await db.batch([
+    dropClientPush(db, id),
+    revokeActiveTokens(db, id, a.id, nowIso()),
+    db.prepare(`INSERT INTO deleted_clients (client_id, deleted_by) VALUES (?1, ?2)`).bind(id, a.id),
+    audit(db, {
+      adminId: a.id,
+      action: "cliente_eliminado",
+      entityType: "client",
+      entityId: id,
+      details: { name: client.name, balance_cents: client.balance_cents },
+      ipHash: c.get("ipHash"),
+    }),
+  ]);
+  return c.json({ deleted: true });
+});
+
+/** Recupera a una clienta eliminada. Su enlace sigue revocado: hay que generar uno nuevo. */
+admin.post("/clients/:id/restore", async (c) => {
+  const id = idParam(c.req.param("id"));
+  const db = c.env.DB;
+  const a = c.get("admin");
+  const row = await db
+    .prepare(`SELECT c.name FROM deleted_clients d JOIN clients c ON c.id = d.client_id WHERE d.client_id = ?1`)
+    .bind(id)
+    .first<{ name: string }>();
+  if (!row) throw new HttpError(404, "Cliente no encontrado entre las eliminadas");
+  await db.batch([
+    db.prepare(`DELETE FROM deleted_clients WHERE client_id = ?1`).bind(id),
+    audit(db, { adminId: a.id, action: "cliente_recuperado", entityType: "client", entityId: id, details: { name: row.name }, ipHash: c.get("ipHash") }),
   ]);
   return c.json({ client: await getClientSummary(db, id) });
 });
@@ -567,7 +620,7 @@ admin.get("/export/clientes.csv", async (c) => {
 admin.get("/export/abonos.csv", async (c) => {
   const res = await c.env.DB.prepare(
     `SELECT y.paid_at, c.name, c.phone, y.amount_cents, y.method, y.note, y.status, y.void_reason, y.purchase_id
-     FROM payments y JOIN clients c ON c.id = y.client_id ORDER BY y.paid_at, y.created_at`,
+     FROM payments y JOIN clients c ON c.id = y.client_id WHERE ${NOT_DELETED} ORDER BY y.paid_at, y.created_at`,
   ).all<{ paid_at: string; name: string; phone: string; amount_cents: number; method: string; note: string; status: string; void_reason: string | null; purchase_id: string | null }>();
   const rows = res.results.map((r) => [
     r.paid_at,
@@ -588,7 +641,7 @@ admin.get("/export/compras.csv", async (c) => {
     `SELECT p.id, p.purchase_date, p.due_date, c.name, c.phone, p.subtotal_cents, p.discount_cents, p.total_cents, p.status,
             (SELECT group_concat(i.quantity || ' x ' || i.description || CASE WHEN i.size <> '' THEN ' (' || i.size || ')' ELSE '' END, '; ')
                FROM (SELECT * FROM purchase_items WHERE purchase_id = p.id ORDER BY position) i) AS prendas
-     FROM purchases p JOIN clients c ON c.id = p.client_id ORDER BY p.purchase_date, p.created_at`,
+     FROM purchases p JOIN clients c ON c.id = p.client_id WHERE ${NOT_DELETED} ORDER BY p.purchase_date, p.created_at`,
   ).all<{ id: string; purchase_date: string; due_date: string | null; name: string; phone: string; subtotal_cents: number; discount_cents: number; total_cents: number; status: string; prendas: string }>();
   const rows = res.results.map((r) => [
     r.purchase_date,
