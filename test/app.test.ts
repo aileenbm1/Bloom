@@ -1,5 +1,6 @@
 import { SELF, env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
+import { localToday } from "../src/routes/portal";
 import { BASE, PASSWORD, cookieFrom, ensureAdmin, login, newClient, newPurchase, openPortal, rawLogin } from "./helpers";
 
 describe("1 · Autenticación administrativa", () => {
@@ -302,6 +303,37 @@ describe("5-7 · Abonos y saldos", () => {
     await expect(env.DB.prepare(`DELETE FROM payments WHERE id = ?1`).bind(pay.data.payment_id).run()).rejects.toThrow();
     await expect(env.DB.prepare(`UPDATE purchase_items SET unit_price_cents = 1`).run()).rejects.toThrow();
     await expect(env.DB.prepare(`DELETE FROM audit_log`).run()).rejects.toThrow();
+  });
+});
+
+describe("Aviso del día de pago", () => {
+  it("usa la fecha de México, no la de UTC", () => {
+    // 27 oct 01:30 UTC = 26 oct 19:30 en Ciudad de México.
+    expect(localToday(new Date("2026-10-27T01:30:00Z"))).toBe("2026-10-26");
+  });
+
+  it("aparece cuando una compra vence hoy y hay saldo pendiente", async () => {
+    const s = await login();
+    const today = localToday();
+    const c = await newClient(s, "Paola Pagadía");
+    await newPurchase(s, c.client.id, [{ description: "Vestido", unit_price: "800" }], { purchase_date: today, due_date: today });
+    const p = await openPortal(c.link);
+    expect(p.html).toContain('id="aviso-pago"');
+    expect(p.html).toContain("¡Hoy es tu día de pago, Paola!");
+    expect(p.html).toContain("$800.00");
+  });
+
+  it("no aparece si la fecha límite es otro día o la cuenta está liquidada", async () => {
+    const s = await login();
+    const today = localToday();
+    const otro = await newClient(s, "Olga Otrodía");
+    await newPurchase(s, otro.client.id, [{ description: "Blusa", unit_price: "300" }], { purchase_date: "2026-01-01", due_date: "2099-12-31" });
+    expect((await openPortal(otro.link)).html).not.toContain('id="aviso-pago"');
+
+    const pagada = await newClient(s, "Lina Liquidada");
+    await newPurchase(s, pagada.client.id, [{ description: "Falda", unit_price: "300" }], { purchase_date: today, due_date: today });
+    await s.json("POST", `/api/admin/clients/${pagada.client.id}/payments`, { amount: "300", paid_at: today, method: "efectivo" });
+    expect((await openPortal(pagada.link)).html).not.toContain('id="aviso-pago"');
   });
 });
 

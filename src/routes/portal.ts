@@ -98,6 +98,11 @@ export const fmtMoney = (cents: number) => mxn.format(cents / 100);
 const dateFmt = new Intl.DateTimeFormat("es-MX", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 export const fmtDate = (d: string | null) => (d ? dateFmt.format(new Date(d.slice(0, 10) + "T00:00:00Z")) : "");
 
+// Las clientas están en México: "hoy" se calcula en su hora local, no en UTC
+// (a las 7 p. m. en CDMX ya es el día siguiente en UTC).
+const localDayFmt = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Mexico_City", year: "numeric", month: "2-digit", day: "2-digit" });
+export const localToday = (now = new Date()) => localDayFmt.format(now);
+
 const METHOD: Record<string, string> = {
   efectivo: "Efectivo",
   transferencia: "Transferencia",
@@ -138,7 +143,7 @@ function renderAccount(
   const settled = client.balance_cents <= 0;
   const credit = client.balance_cents < 0;
   const statusLabel = credit ? "Saldo a favor" : settled ? "Al corriente" : "Pendiente";
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localToday();
   const wa = /^\d{10,15}$/.test(whatsapp)
     ? `<a class="btn wa" href="https://wa.me/${whatsapp}?text=${encodeURIComponent(`Hola ${business}, soy ${client.name}. Tengo una pregunta sobre mi cuenta.`)}" target="_blank" rel="noopener noreferrer">Contactar por WhatsApp</a>`
     : "";
@@ -172,6 +177,8 @@ function renderAccount(
     : `<p class="muted">Aún no hay abonos registrados.</p>`;
 
   const overdue = client.next_due_date && client.next_due_date < today;
+  // Día de pago: alguna compra activa vence hoy y todavía hay saldo pendiente.
+  const payday = !settled && purchases.some((p) => p.status === "active" && p.due_date === today);
 
   return `
   <section class="hero">
@@ -202,6 +209,23 @@ function renderAccount(
   <h2>Compras y prendas</h2>
   ${purchaseRows}
 
+  ${payday ? renderPaydayDialog(client.name, client.balance_cents, today) : ""}
+
   <p class="muted small">Consulta generada el ${esc(fmtDate(today))}. Este enlace es personal: no lo compartas.</p>
   <form method="post" action="/cuenta/salir" class="no-print"><button class="link" type="submit">Cerrar esta consulta</button></form>`;
+}
+
+/** Aviso emergente del día de pago. portal.js lo abre al cargar y reproduce el sonido. */
+function renderPaydayDialog(name: string, balanceCents: number, today: string): string {
+  const firstName = name.trim().split(/\s+/)[0] ?? "";
+  return `
+  <dialog class="payday no-print" id="aviso-pago" aria-labelledby="aviso-pago-titulo">
+    <div class="sparkles" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    <p class="payday-kicker">✨ ${esc(fmtDate(today))} ✨</p>
+    <h2 id="aviso-pago-titulo">¡Hoy es tu día de pago${firstName ? `, ${esc(firstName)}` : ""}!</h2>
+    <p>Tu saldo pendiente es de</p>
+    <p class="payday-amount">${esc(fmtMoney(balanceCents))}</p>
+    <p class="small">Gracias por estar al día. 💜</p>
+    <form method="dialog"><button class="btn" type="submit" autofocus>Entendido</button></form>
+  </dialog>`;
 }
