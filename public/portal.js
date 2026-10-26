@@ -129,7 +129,7 @@ function kaching(ctx) {
         "Toca el ícono que está a la izquierda de la dirección, arriba (o la campanita tachada si aparece).",
         "Entra a Permisos o Notificaciones y elige Permitir.",
         "Revisa Ajustes del celular → Aplicaciones → tu navegador (Chrome o Samsung Internet) → Notificaciones: deben estar activadas. Si están apagadas, el navegador no te puede preguntar.",
-        "En Chrome: menú ⋮ → Configuración → Configuración de sitios → Notificaciones → apaga “Usar mensajes más discretos”.",
+        "En Chrome: menú ⋮ → Configuración → Configuración de sitios → Notificaciones. Debe estar activado “Los sitios pueden pedir enviar notificaciones” y apagado “Usar mensajes más discretos”.",
         "Regresa aquí y toca el botón otra vez.",
       ].map((t) => {
         const li = document.createElement("li");
