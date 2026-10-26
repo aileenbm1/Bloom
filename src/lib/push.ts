@@ -14,6 +14,8 @@ export const localToday = (now = new Date()) => localDayFmt.format(now);
 // Solo se envían avisos a los servicios push de los navegadores (evita que el servidor
 // haga peticiones a direcciones arbitrarias).
 const PUSH_HOSTS = [/^fcm\.googleapis\.com$/, /^updates\.push\.services\.mozilla\.com$/, /^[a-z0-9-]+\.push\.services\.mozilla\.com$/, /^web\.push\.apple\.com$/, /^[a-z0-9.-]+\.notify\.windows\.com$/];
+/** Debe coincidir con wrangler.jsonc. Vive aquí: el módulo principal del Worker solo puede exportar handlers. */
+export const PAYDAY_CRON = "0 15-18 * * *";
 export const MAX_DEVICES_PER_LINK = 5;
 /** Cloudflare (plan gratuito) permite 50 peticiones externas por ejecución; se deja margen. */
 export const MAX_SENDS_PER_RUN = 40;

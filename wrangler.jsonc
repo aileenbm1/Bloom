@@ -32,7 +32,7 @@
   },
 
   // 1) Limpieza diaria de sesiones vencidas y contadores de intentos.
-  // 2) Aviso push del día de pago (9 a 12 h, hora de Ciudad de México). Debe coincidir con PAYDAY_CRON en src/index.ts.
+  // 2) Aviso push del día de pago (9 a 12 h, hora de Ciudad de México). Debe coincidir con PAYDAY_CRON en src/lib/push.ts.
   "triggers": { "crons": ["15 9 * * *", "0 15-18 * * *"] },
 
   // Los registros de invocación incluyen la URL completa; se desactivan para

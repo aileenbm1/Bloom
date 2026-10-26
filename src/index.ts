@@ -4,7 +4,7 @@ import { requireSecret, securityHeaders, withIpHash } from "./lib/http";
 import { HttpError, ValidationError } from "./lib/validate";
 import { admin } from "./routes/admin";
 import { auth } from "./routes/auth";
-import { sendPaydayPushes } from "./lib/push";
+import { PAYDAY_CRON, sendPaydayPushes } from "./lib/push";
 import { portal } from "./routes/portal";
 
 const app = new Hono<AppEnv>();
@@ -41,8 +41,6 @@ app.onError((err, c) => {
   console.error(JSON.stringify({ level: "error", route, name: err.name, message: err.message.slice(0, 200) }));
   return c.json({ error: "Error interno. Inténtalo de nuevo." }, 500);
 });
-
-export const PAYDAY_CRON = "0 15-18 * * *";
 
 export default {
   fetch: app.fetch,
