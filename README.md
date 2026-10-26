@@ -189,6 +189,16 @@ npm run admin:create -- --remote --username leilani --name "Leilani"
 
 **Importante:** el enlace funciona como una credencial. Cualquier persona que lo reciba puede ver esa cuenta (no puede modificar nada). Si se envió a la persona equivocada o la clienta lo compartió, toca **Revocar** (deja de funcionar al instante, incluso en teléfonos que ya lo habían abierto) y luego **Regenerar** para enviar uno nuevo.
 
+### Avisos en el celular (notificaciones push)
+
+- **La clienta los activa** en su portal con **🔔 Avisarme mi día de pago**; el navegador le pide permiso y solo con su "Permitir" se activan. Puede desactivarlos ahí mismo o desde los ajustes del navegador.
+- **iPhone:** Apple solo permite avisos si el portal está agregado a la pantalla de inicio (Compartir → *Agregar a inicio*, iOS 16.4 o más reciente). Al abrir ese ícono, la clienta pega su enlace una vez y activa los avisos.
+- **Aviso automático:** el día de la fecha límite de una compra, si hay saldo pendiente, llega "✨ Hoy es tu día de pago" alrededor de las 9 a. m. (hora de Ciudad de México). Una vez por día y dispositivo.
+- **Desde el panel:** en *Resumen* → **Enviar recordatorio a todas** (pide confirmación; no repite a quien recibió uno en las últimas 12 horas) y en la ficha de cada clienta → **Enviar recordatorio de pago**. Cada envío queda en el historial.
+- El texto de la notificación no incluye montos ni nombres (se ve en la pantalla de bloqueo). Al tocarla se abre el portal.
+- **Revocar o regenerar el enlace borra sus avisos**: la clienta los vuelve a activar con el enlace nuevo.
+- Las claves VAPID se generan solas y se guardan en D1. Opcional: variable `PUSH_CONTACT` (`mailto:tu@correo`) como contacto para los servicios push.
+
 ## 6. Modelo de datos
 
 | Tabla | Contenido |

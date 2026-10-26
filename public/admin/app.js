@@ -236,7 +236,7 @@
 
   // ---------- resumen ----------
   async function viewDashboard() {
-    const d = await api("GET", "/api/admin/dashboard");
+    const [d, push] = await Promise.all([api("GET", "/api/admin/dashboard"), api("GET", "/api/admin/push")]);
     setView(
       h("h1", {}, "Resumen"),
       h(
@@ -251,6 +251,7 @@
         tile("Cuentas al corriente", String(d.clients_settled)),
         tile("Con fecha límite vencida", String(d.clients_overdue)),
       ),
+      pushSection(push),
       h("h2", {}, "Mayores saldos pendientes"),
       d.top_pending.length ? clientList(d.top_pending) : h("p", { class: "muted" }, "No hay saldos pendientes."),
       h("h2", {}, "Exportar a Excel (CSV)"),
@@ -263,6 +264,80 @@
       ),
     );
   }
+  function pushSection(push) {
+    return h(
+      "section",
+      { class: "card no-print" },
+      h("h2", {}, "Avisos en el celular"),
+      h(
+        "p",
+        { class: "muted" },
+        push.clients
+          ? `${push.clients} ${push.clients === 1 ? "clienta tiene" : "clientas tienen"} los avisos activados · ${push.with_balance} con saldo pendiente.`
+          : "Ninguna clienta ha activado los avisos todavía. Ellas los activan desde su portal con el botón “Avisarme mi día de pago”.",
+      ),
+      h("p", { class: "muted small" }, "El aviso del día de pago se envía solo a las 9 a. m. Aquí puedes mandar además un recordatorio de pago."),
+      push.with_balance
+        ? h("button", { type: "button", onclick: () => remindAll(push) }, "Enviar recordatorio a todas")
+        : null,
+    );
+  }
+
+  function remindResult(r) {
+    if (!r.devices) return "No había a quién enviar (ya recibieron uno en las últimas 12 horas o no tienen saldo).";
+    let t = `Recordatorio enviado a ${r.clients} ${r.clients === 1 ? "clienta" : "clientas"}`;
+    if (r.failed) t += ` · ${r.failed} ${r.failed === 1 ? "dispositivo falló" : "dispositivos fallaron"}`;
+    if (r.pending) t += ` · faltan ${r.pending}: vuelve a presionar el botón`;
+    return t;
+  }
+
+  async function remindAll(push) {
+    const ok = await confirmDialog({
+      title: "Enviar recordatorio de pago",
+      message: `Llegará una notificación a ${push.with_balance} ${push.with_balance === 1 ? "clienta" : "clientas"} con saldo pendiente y avisos activados. No se repite a quien ya recibió uno en las últimas 12 horas.`,
+      confirmText: "Enviar",
+    });
+    if (!ok) return;
+    try {
+      toast(remindResult(await api("POST", "/api/admin/push/reminder", {})));
+      route();
+    } catch (e) {
+      toast(e.message);
+    }
+  }
+
+  async function remindClient(c) {
+    const ok = await confirmDialog({
+      title: "Enviar recordatorio de pago",
+      message: `${c.name} recibirá una notificación en su celular invitándola a ver su estado de cuenta.`,
+      confirmText: "Enviar",
+    });
+    if (!ok) return;
+    try {
+      const r = await api("POST", `/api/admin/clients/${c.id}/push/reminder`, {});
+      toast(r.sent ? "Recordatorio enviado" : "No se pudo entregar. Puede que haya desactivado los avisos.");
+    } catch (e) {
+      toast(e.message);
+    }
+  }
+
+  function clientPushSection(c, push) {
+    const devices = push ? push.devices : 0;
+    return h(
+      "section",
+      { class: "card no-print" },
+      h("h2", {}, "Avisos en el celular"),
+      h(
+        "p",
+        { class: "muted" },
+        devices
+          ? `Activados en ${devices} ${devices === 1 ? "dispositivo" : "dispositivos"}.`
+          : "No ha activado los avisos. Puede hacerlo desde su portal con el botón “Avisarme mi día de pago”.",
+      ),
+      devices && c.balance_cents > 0 ? h("button", { type: "button", onclick: () => remindClient(c) }, "Enviar recordatorio de pago") : null,
+    );
+  }
+
   function tile(label, value, main) {
     return h("div", { class: "tile" + (main ? " main" : "") }, h("span", {}, label), h("strong", {}, value));
   }
@@ -385,6 +460,7 @@
         h("button", { type: "button", class: "secondary", onclick: () => editClient(c) }, "Editar datos"),
       ),
       linkSection(c, d.link),
+      clientPushSection(c, d.push),
       paymentForm(c, activePurchases),
       purchaseForm(c),
       h("h2", {}, "Abonos"),
@@ -750,6 +826,8 @@
     cliente_editado: "Cliente editado",
     enlace_regenerado: "Enlace regenerado",
     enlace_revocado: "Enlace revocado",
+    recordatorio_enviado: "Recordatorio de pago enviado",
+    recordatorio_general: "Recordatorio de pago a todas",
     compra_registrada: "Compra registrada",
     compra_cancelada: "Compra cancelada",
     abono_registrado: "Abono registrado",
@@ -769,6 +847,7 @@
     if (d.reason) parts.push("Motivo: " + d.reason);
     if (d.username) parts.push("Usuario: " + d.username);
     if (d.name) parts.push(d.name);
+    if (d.devices !== undefined) parts.push(`Recibieron: ${d.clients} ${d.clients === 1 ? "clienta" : "clientas"} (${d.sent} de ${d.devices} dispositivos)`);
     return parts.join(" · ");
   }
 

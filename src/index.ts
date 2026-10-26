@@ -4,6 +4,7 @@ import { requireSecret, securityHeaders, withIpHash } from "./lib/http";
 import { HttpError, ValidationError } from "./lib/validate";
 import { admin } from "./routes/admin";
 import { auth } from "./routes/auth";
+import { PAYDAY_CRON, sendPaydayPushes } from "./lib/push";
 import { portal } from "./routes/portal";
 
 const app = new Hono<AppEnv>();
@@ -43,7 +44,13 @@ app.onError((err, c) => {
 
 export default {
   fetch: app.fetch,
-  async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
+  async scheduled(controller: ScheduledController, env: Env): Promise<void> {
+    // Aviso del día de pago: 9, 10, 11 y 12 h en Ciudad de México (UTC−6). Cada dispositivo
+    // lo recibe una vez; las ejecuciones siguientes continúan si hubo más de 40 envíos.
+    if (controller.cron === PAYDAY_CRON) {
+      await sendPaydayPushes(env);
+      return;
+    }
     const now = Date.now();
     await env.DB.batch([
       env.DB.prepare(`DELETE FROM admin_sessions WHERE expires_at < ?1`).bind(now),
