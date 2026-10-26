@@ -5,6 +5,8 @@ export interface Env {
   APP_SECRET: string;
   BUSINESS_NAME: string;
   WHATSAPP_NUMBER: string;
+  /** Contacto para los servicios push (mailto: o https:). Opcional. */
+  PUSH_CONTACT?: string;
 }
 
 export interface AdminContext {

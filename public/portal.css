@@ -94,3 +94,12 @@ dialog.payday .btn:focus-visible { outline: 2px solid rgba(255,255,255,.9); outl
   dialog.payday { animation: none; }
   .sparkles i { animation: none; opacity: .8; }
 }
+
+/* --- Avisos push y acceso desde la app --- */
+[hidden] { display: none !important; }
+.avisos { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 4px 14px 14px; margin: 18px 0; }
+.avisos h2 { margin-top: 12px; }
+.avisos p { margin: 0 0 10px; }
+.btn.soft { width: 100%; background: var(--brand-soft); color: var(--brand); border-color: var(--brand-soft); }
+.paste { display: flex; flex-direction: column; gap: 8px; margin-top: 18px; }
+.paste input { min-height: 48px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; font: inherit; }

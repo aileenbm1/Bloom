@@ -10,6 +10,7 @@ import {
   purchaseRemainingExpr,
 } from "../lib/db";
 import { requireAdmin } from "../lib/http";
+import { dropClientPush, ensurePushSchema, pushStats, sendReminders } from "../lib/push";
 import { activeLink, linkUrl, newAccessToken, revokeActiveTokens } from "../lib/links";
 import { csvResponse, money } from "../lib/csv";
 import {
@@ -28,6 +29,10 @@ import {
 
 export const admin = new Hono<AppEnv>();
 admin.use("*", requireAdmin);
+admin.use("*", async (c, next) => {
+  await ensurePushSchema(c.env.DB);
+  await next();
+});
 
 
 async function body(c: { req: { json: () => Promise<unknown> } }) {
@@ -119,15 +124,17 @@ admin.get("/clients/:id", async (c) => {
   const db = c.env.DB;
   const client = await getClientSummary(db, id);
   if (!client) throw new HttpError(404, "Cliente no encontrado");
-  const [purchases, payments, link] = await Promise.all([
+  const [purchases, payments, link, push] = await Promise.all([
     getPurchases(db, id),
     getPayments(db, id),
     activeLink(db, c.env.APP_SECRET, id),
+    pushStats(db, id),
   ]);
   return c.json({
     client,
     purchases,
     payments,
+    push: { devices: push.devices },
     link: link
       ? { active: true, url: link.token ? linkUrl(new URL(c.req.url).origin, link.token) : null, created_at: link.created_at, last_used_at: link.last_used_at }
       : { active: false, url: null },
@@ -161,6 +168,7 @@ admin.post("/clients/:id/link/regenerate", async (c) => {
   const a = c.get("admin");
   const link = await newAccessToken(db, c.env.APP_SECRET, id, a.id);
   await db.batch([
+    dropClientPush(db, id),
     revokeActiveTokens(db, id, a.id, nowIso()),
     link.stmt,
     audit(db, { adminId: a.id, action: "enlace_regenerado", entityType: "client", entityId: id, details: { token_id: link.id }, ipHash: c.get("ipHash") }),
@@ -173,11 +181,37 @@ admin.post("/clients/:id/link/revoke", async (c) => {
   const db = c.env.DB;
   await requireClient(db, id);
   const a = c.get("admin");
-  const [res] = await db.batch([
+  const [, res] = await db.batch([
+    dropClientPush(db, id),
     revokeActiveTokens(db, id, a.id, nowIso()),
     audit(db, { adminId: a.id, action: "enlace_revocado", entityType: "client", entityId: id, ipHash: c.get("ipHash") }),
   ]);
   return c.json({ revoked: res.meta.changes });
+});
+
+// --- Avisos push ----------------------------------------------------------------
+
+admin.get("/push", async (c) => c.json(await pushStats(c.env.DB)));
+
+/** Recordatorio de pago a todas las clientas con avisos activos y saldo pendiente. */
+admin.post("/push/reminder", async (c) => {
+  const db = c.env.DB;
+  const r = await sendReminders(c.env, null);
+  await audit(db, { adminId: c.get("admin").id, action: "recordatorio_general", entityType: "push", entityId: null, details: r, ipHash: c.get("ipHash") }).run();
+  return c.json(r);
+});
+
+/** Recordatorio de pago a una clienta (todos sus dispositivos con avisos activos). */
+admin.post("/clients/:id/push/reminder", async (c) => {
+  const id = idParam(c.req.param("id"));
+  const db = c.env.DB;
+  const client = await getClientSummary(db, id);
+  if (!client) throw new HttpError(404, "Cliente no encontrado");
+  if (client.balance_cents <= 0) throw new HttpError(409, "Esta clienta no tiene saldo pendiente");
+  if ((await pushStats(db, id)).devices === 0) throw new HttpError(409, "Esta clienta no ha activado los avisos en su portal");
+  const r = await sendReminders(c.env, id);
+  await audit(db, { adminId: c.get("admin").id, action: "recordatorio_enviado", entityType: "client", entityId: id, details: r, ipHash: c.get("ipHash") }).run();
+  return c.json(r);
 });
 
 // --- Compras -------------------------------------------------------------------

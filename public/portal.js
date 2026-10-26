@@ -101,3 +101,98 @@ function kaching(ctx) {
     });
   });
 }
+
+// --- Avisos push: la clienta los activa tocando el botón (el navegador pide permiso) ----
+(function () {
+  const box = document.getElementById("avisos");
+  if (!box) return;
+  const msg = box.querySelector("[data-avisos-msg]");
+  const on = box.querySelector("[data-action=avisos-on]");
+  const off = box.querySelector("[data-action=avisos-off]");
+  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const installed = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+  const supported = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+
+  const say = (text) => (msg.textContent = text);
+  const show = (subscribed) => {
+    on.hidden = subscribed;
+    off.hidden = !subscribed;
+    say(subscribed ? "✅ Avisos activados en este dispositivo. Te avisaremos el día de tu pago." : "Te avisamos con una notificación el día de tu pago.");
+  };
+
+  if (!supported) {
+    if (ios && !installed) {
+      box.hidden = false;
+      on.hidden = true;
+      say("En iPhone: toca Compartir y luego “Agregar a inicio”. Abre BLOOM desde ese ícono, pega tu enlace y activa los avisos ahí.");
+    }
+    return;
+  }
+  box.hidden = false;
+
+  const keyBytes = () => {
+    const s = box.dataset.key.replace(/-/g, "+").replace(/_/g, "/");
+    const bin = atob(s + "===".slice((s.length + 3) % 4));
+    return Uint8Array.from(bin, (ch) => ch.charCodeAt(0));
+  };
+  const post = (path, body) =>
+    fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), credentials: "same-origin" });
+
+  const ready = navigator.serviceWorker.register("/portal-sw.js", { scope: "/cuenta" }).then(() => navigator.serviceWorker.ready);
+  ready
+    .then((reg) => reg.pushManager.getSubscription())
+    .then((sub) => {
+      if (sub && Notification.permission === "granted") {
+        show(true);
+        post("/cuenta/avisos", sub.toJSON()).catch(() => {}); // por si el enlace se regeneró
+      } else show(false);
+    })
+    .catch(() => show(false));
+
+  on.addEventListener("click", async () => {
+    on.disabled = true;
+    try {
+      const perm = await Notification.requestPermission();
+      if (perm !== "granted") {
+        say("No se activaron. Si los bloqueaste, permítelos en los ajustes del navegador para este sitio.");
+        return;
+      }
+      const reg = await ready;
+      const sub = (await reg.pushManager.getSubscription()) || (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes() }));
+      const res = await post("/cuenta/avisos", sub.toJSON());
+      if (res.status === 401) {
+        await sub.unsubscribe();
+        say("Tu consulta expiró. Abre tu enlace de nuevo para activar los avisos.");
+        return;
+      }
+      if (!res.ok) {
+        await sub.unsubscribe();
+        const data = await res.json().catch(() => ({}));
+        say(data.error || "No se pudieron activar los avisos. Inténtalo más tarde.");
+        return;
+      }
+      show(true);
+      reg.showNotification("Avisos activados ✨", { body: "Te avisaremos aquí el día de tu pago.", icon: "/icons/icon-192.png?v=2", tag: "bienvenida" });
+    } catch (_) {
+      say("Este navegador no permitió activar los avisos.");
+    } finally {
+      on.disabled = false;
+    }
+  });
+
+  off.addEventListener("click", async () => {
+    off.disabled = true;
+    try {
+      const reg = await ready;
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) {
+        await post("/cuenta/avisos/baja", { endpoint: sub.endpoint }).catch(() => {});
+        await sub.unsubscribe();
+      }
+      show(false);
+      say("Avisos desactivados en este dispositivo.");
+    } finally {
+      off.disabled = false;
+    }
+  });
+})();
