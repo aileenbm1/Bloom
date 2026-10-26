@@ -58,25 +58,33 @@ button.link { background: none; border: none; color: var(--muted); text-decorati
 
 /* --- Aviso del día de pago: lila translúcido con brillitos --- */
 dialog.payday {
-  position: fixed; width: min(92vw, 380px); max-width: none; margin: auto; padding: 28px 22px 22px; overflow: hidden;
-  border: 1px solid rgba(255,255,255,.65); border-radius: 22px; text-align: center; color: var(--ink);
-  background: linear-gradient(160deg, rgba(214,188,240,.72), rgba(178,140,220,.6));
+  position: fixed; width: min(92vw, 380px); max-width: none; margin: auto; padding: 22px 22px 22px; overflow: hidden;
+  border: 1.5px solid rgba(212,181,116,.9); border-radius: 22px; text-align: center; color: var(--ink);
+  background:
+    radial-gradient(120% 60% at 50% 0%, rgba(246,231,191,.45), rgba(246,231,191,0) 60%),
+    linear-gradient(160deg, rgba(222,200,244,.7), rgba(178,140,220,.58));
   -webkit-backdrop-filter: blur(14px) saturate(140%); backdrop-filter: blur(14px) saturate(140%);
-  box-shadow: 0 18px 50px rgba(106,47,143,.35), inset 0 1px 0 rgba(255,255,255,.7);
+  box-shadow: 0 18px 50px rgba(106,47,143,.35), 0 0 0 5px rgba(212,181,116,.18), inset 0 1px 0 rgba(255,255,255,.7);
   animation: payday-in .45s cubic-bezier(.2,.9,.3,1.2);
 }
+.payday-logo { position: relative; display: block; width: 200px; max-width: 70%; height: auto; margin: 0 auto 6px; filter: drop-shadow(0 2px 6px rgba(255,255,255,.6)); }
 dialog.payday::backdrop { background: rgba(43,14,63,.28); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
 dialog.payday h2 { position: relative; margin: 6px 0 10px; font-size: 1.45rem; color: var(--brand); }
 dialog.payday p { position: relative; margin: 4px 0; }
-.payday-kicker { font-size: .85rem; letter-spacing: .04em; color: var(--muted); }
-.payday-amount { font-family: "Playfair Display", Georgia, serif; font-size: 2rem; font-weight: 700; color: var(--brand); font-variant-numeric: tabular-nums; }
-dialog.payday form { position: relative; margin-top: 16px; }
+.payday-kicker { font-size: .85rem; letter-spacing: .06em; color: #8a6a2a; font-weight: 600; }
+.payday-kicker::after { content: ""; display: block; width: 64px; height: 1.5px; margin: 8px auto 0; background: linear-gradient(90deg, rgba(212,181,116,0), #d4b574, rgba(212,181,116,0)); }
+dialog.payday form { position: relative; }
+.notice-amount { background: rgba(255,255,255,.4); border: 1px solid rgba(212,181,116,.55); border-radius: 12px; padding: 10px; margin-top: 10px !important; }
+.notice-amount span { display: block; font-size: .85rem; color: var(--muted); }
+.notice-amount strong { display: block; font-family: "Playfair Display", Georgia, serif; font-size: 1.8rem; color: var(--brand); font-variant-numeric: tabular-nums; }
+.notice-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+dialog.payday .notice-wa { background: rgba(255,255,255,.75); border-color: rgba(31,122,69,.4); color: #1f7a45; border-bottom: 1px solid rgba(31,122,69,.4); }
 dialog.payday .btn { width: 100%; border-bottom: 3px solid var(--gold); }
 dialog.payday .btn:focus-visible { outline: 2px solid rgba(255,255,255,.9); outline-offset: 2px; }
 .sparkles { position: absolute; inset: 0; pointer-events: none; }
 .sparkles i {
   position: absolute; width: 10px; height: 10px; opacity: 0;
-  background: radial-gradient(circle, #fff 0 18%, rgba(255,255,255,0) 60%);
+  background: radial-gradient(circle, #fff6dc 0 20%, rgba(212,181,116,.9) 35%, rgba(212,181,116,0) 62%);
   clip-path: polygon(50% 0, 60% 40%, 100% 50%, 60% 60%, 50% 100%, 40% 60%, 0 50%, 40% 40%);
   animation: twinkle 2.4s ease-in-out infinite;
 }
