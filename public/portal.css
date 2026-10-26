@@ -103,3 +103,5 @@ dialog.payday .btn:focus-visible { outline: 2px solid rgba(255,255,255,.9); outl
 .btn.soft { width: 100%; background: var(--brand-soft); color: var(--brand); border-color: var(--brand-soft); }
 .paste { display: flex; flex-direction: column; gap: 8px; margin-top: 18px; }
 .paste input { min-height: 48px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; font: inherit; }
+.avisos-help { margin: 0 0 12px; padding-left: 20px; color: var(--ink); }
+.avisos-help li { margin-bottom: 6px; }
