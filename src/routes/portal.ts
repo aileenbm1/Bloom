@@ -245,9 +245,7 @@ function renderAccount(
 
   const overdue = client.next_due_date && client.next_due_date < today;
   // Día de pago: alguna compra activa vence hoy y todavía hay saldo pendiente.
-  const payday = !settled && purchases.some((p) => p.status === "active" && p.due_date === today);
-  // Al abrir el enlace: aviso emergente si hoy vence una compra o si ya pasó la fecha límite.
-  const alert = payday ? "hoy" : overdue && !settled ? "vencido" : null;
+
 
   return `
   <section class="hero">
@@ -285,28 +283,58 @@ function renderAccount(
   <h2>Compras y prendas</h2>
   ${purchaseRows}
 
-  ${alert ? renderPaydayDialog(alert, client.name, client.balance_cents, alert === "hoy" ? today : client.next_due_date!) : ""}
+  ${renderPaymentNotice(business, whatsapp, client, today)}
 
   <p class="muted small">Consulta generada el ${esc(fmtDate(today))}. Este enlace es personal: no lo compartas.</p>
   <form method="post" action="/cuenta/salir" class="no-print"><button class="link" type="submit">Cerrar esta consulta</button></form>`;
 }
 
-/** Aviso emergente del día de pago. portal.js lo abre al cargar y reproduce el sonido. */
-function renderPaydayDialog(kind: "hoy" | "vencido", name: string, balanceCents: number, date: string): string {
-  const firstName = name.trim().split(/\s+/)[0] ?? "";
-  const who = firstName ? `, ${esc(firstName)}` : "";
-  const title = kind === "hoy" ? `¡Hoy es tu día de pago${who}!` : `Tu pago está pendiente${who}`;
-  const kicker = kind === "hoy" ? esc(fmtDate(date)) : `Fecha límite: ${esc(fmtDate(date))}`;
-  const thanks = kind === "hoy" ? "Gracias por estar al día. 💜" : "Ponte al corriente cuando puedas. 💜";
+/** Días que faltan para el día de pago: 0 es hoy y un número negativo, que ya pasó. */
+export function daysUntil(dueDate: string, today: string): number {
+  return Math.round((Date.parse(dueDate.slice(0, 10) + "T00:00:00Z") - Date.parse(today + "T00:00:00Z")) / 86_400_000);
+}
+
+/** Con cuántos días de anticipación se avisa al cliente de su día de pago. */
+export const NOTICE_DAYS_BEFORE = 3;
+
+/**
+ * Aviso emergente de día de pago (igual que en BloomMultitienda, con los colores de BLOOM):
+ * aparece al abrir el estado de cuenta si hay saldo pendiente y la fecha límite más próxima
+ * es hoy, ya pasó o llega en los próximos NOTICE_DAYS_BEFORE días. portal.js lo abre y suena.
+ */
+function renderPaymentNotice(
+  business: string,
+  whatsapp: string,
+  client: NonNullable<Awaited<ReturnType<typeof getClientSummary>>>,
+  today: string,
+): string {
+  if (!client.next_due_date || client.balance_cents <= 0) return "";
+  const days = daysUntil(client.next_due_date, today);
+  if (days > NOTICE_DAYS_BEFORE) return "";
+  const date = esc(fmtDate(client.next_due_date));
+  const title = days < 0 ? "Tu pago está vencido" : days === 0 ? "¡Hoy es tu día de pago!" : "Tu día de pago se acerca";
+  const when =
+    days < 0
+      ? `Tu fecha límite fue el ${date}.`
+      : days === 0
+        ? `Tu fecha límite es hoy, ${date}.`
+        : `Tu fecha límite es el ${date} (${days === 1 ? "mañana" : `en ${days} días`}).`;
+  const wa = /^\d{10,15}$/.test(whatsapp)
+    ? `<a class="btn notice-wa" href="https://wa.me/${whatsapp}?text=${encodeURIComponent(`Hola ${business}, soy ${client.name}. Quiero hacer mi pago.`)}" target="_blank" rel="noopener noreferrer">Avisar a la tienda por WhatsApp</a>`
+    : "";
   return `
   <dialog class="payday no-print" id="aviso-pago" aria-labelledby="aviso-pago-titulo">
     <div class="sparkles" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
-    <img class="payday-logo" src="/logo.png" alt="BLOOM · A tu manera" width="200" height="112">
-    <p class="payday-kicker">✦ ${kicker} ✦</p>
-    <h2 id="aviso-pago-titulo">${title}</h2>
-    <p>Tu saldo pendiente es de</p>
-    <p class="payday-amount">${esc(fmtMoney(balanceCents))}</p>
-    <p class="small">${thanks}</p>
-    <form method="dialog"><button class="btn" type="submit" autofocus>Entendido</button></form>
+    <form method="dialog">
+      <img class="payday-logo" src="/logo.png" alt="BLOOM · A tu manera" width="200" height="112">
+      <p class="payday-kicker">✦ Aviso de pago ✦</p>
+      <h2 id="aviso-pago-titulo">${title}</h2>
+      <p>${when}</p>
+      <p class="notice-amount"><span>Saldo pendiente</span><strong>${esc(fmtMoney(client.balance_cents))}</strong></p>
+      <div class="notice-actions">
+        ${wa}
+        <button class="btn" value="ok" autofocus>Entendido</button>
+      </div>
+    </form>
   </dialog>`;
 }

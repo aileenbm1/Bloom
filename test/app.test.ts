@@ -1,6 +1,6 @@
 import { SELF, env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
-import { localToday } from "../src/routes/portal";
+import { daysUntil, localToday } from "../src/routes/portal";
 import { BASE, PASSWORD, cookieFrom, ensureAdmin, login, newClient, newPurchase, openPortal, rawLogin } from "./helpers";
 
 describe("1 · Autenticación administrativa", () => {
@@ -319,7 +319,8 @@ describe("Aviso del día de pago", () => {
     await newPurchase(s, c.client.id, [{ description: "Vestido", unit_price: "800" }], { purchase_date: today, due_date: today });
     const p = await openPortal(c.link);
     expect(p.html).toContain('id="aviso-pago"');
-    expect(p.html).toContain("¡Hoy es tu día de pago, Paola!");
+    expect(p.html).toContain("¡Hoy es tu día de pago!");
+    expect(p.html).toContain("Avisar a la tienda por WhatsApp");
     expect(p.html).toContain("$800.00");
   });
 
@@ -329,8 +330,24 @@ describe("Aviso del día de pago", () => {
     await newPurchase(s, c.client.id, [{ description: "Saco", unit_price: "500" }], { purchase_date: "2026-01-01", due_date: "2026-01-15" });
     const p = await openPortal(c.link);
     expect(p.html).toContain('id="aviso-pago"');
-    expect(p.html).toContain("Tu pago está pendiente, Vera");
+    expect(p.html).toContain("Tu pago está vencido");
+    expect(p.html).toContain("Tu fecha límite fue el 15 ene 2026.");
     expect(p.html).toContain('src="/logo.png"');
+  });
+
+  it("avisa con 3 días de anticipación, no antes", async () => {
+    const s = await login();
+    const today = localToday();
+    const plus = (n: number) => new Date(Date.parse(today + "T00:00:00Z") + n * 86_400_000).toISOString().slice(0, 10);
+    expect(daysUntil(plus(3), today)).toBe(3);
+    const pronto = await newClient(s, "Pía Pronto");
+    await newPurchase(s, pronto.client.id, [{ description: "Bolsa", unit_price: "400" }], { purchase_date: today, due_date: plus(1) });
+    const p = await openPortal(pronto.link);
+    expect(p.html).toContain("Tu día de pago se acerca");
+    expect(p.html).toContain("(mañana)");
+    const lejos = await newClient(s, "Laura Lejos");
+    await newPurchase(s, lejos.client.id, [{ description: "Bolsa", unit_price: "400" }], { purchase_date: today, due_date: plus(4) });
+    expect((await openPortal(lejos.link)).html).not.toContain('id="aviso-pago"');
   });
 
   it("no aparece si la fecha límite es otro día o la cuenta está liquidada", async () => {

@@ -73,8 +73,12 @@ dialog.payday h2 { position: relative; margin: 6px 0 10px; font-size: 1.45rem; c
 dialog.payday p { position: relative; margin: 4px 0; }
 .payday-kicker { font-size: .85rem; letter-spacing: .06em; color: #8a6a2a; font-weight: 600; }
 .payday-kicker::after { content: ""; display: block; width: 64px; height: 1.5px; margin: 8px auto 0; background: linear-gradient(90deg, rgba(212,181,116,0), #d4b574, rgba(212,181,116,0)); }
-.payday-amount { font-family: "Playfair Display", Georgia, serif; font-size: 2rem; font-weight: 700; color: var(--brand); font-variant-numeric: tabular-nums; }
-dialog.payday form { position: relative; margin-top: 16px; }
+dialog.payday form { position: relative; }
+.notice-amount { background: rgba(255,255,255,.4); border: 1px solid rgba(212,181,116,.55); border-radius: 12px; padding: 10px; margin-top: 10px !important; }
+.notice-amount span { display: block; font-size: .85rem; color: var(--muted); }
+.notice-amount strong { display: block; font-family: "Playfair Display", Georgia, serif; font-size: 1.8rem; color: var(--brand); font-variant-numeric: tabular-nums; }
+.notice-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+dialog.payday .notice-wa { background: rgba(255,255,255,.75); border-color: rgba(31,122,69,.4); color: #1f7a45; border-bottom: 1px solid rgba(31,122,69,.4); }
 dialog.payday .btn { width: 100%; border-bottom: 3px solid var(--gold); }
 dialog.payday .btn:focus-visible { outline: 2px solid rgba(255,255,255,.9); outline-offset: 2px; }
 .sparkles { position: absolute; inset: 0; pointer-events: none; }

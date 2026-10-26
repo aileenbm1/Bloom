@@ -52,54 +52,56 @@ document.addEventListener("click", (e) => {
   }
 })();
 
+/**
+ * Sonido suave de "cash" (cha-ching), el mismo de BloomMultitienda: un "cha" brillante y corto,
+ * unas monedas y una campanita "ching" que se apaga poco a poco. Web Audio, sin archivos.
+ */
 function kaching(ctx) {
-  const t0 = ctx.currentTime + 0.02;
-  const master = ctx.createGain();
-  master.gain.value = 0.3; // volumen bajo
-  const soften = ctx.createBiquadFilter();
-  soften.type = "lowpass";
-  soften.frequency.value = 4500;
-  master.connect(soften).connect(ctx.destination);
+  const t = ctx.currentTime + 0.02;
+  // Volumen bajo y sin los agudos más ásperos.
+  const out = ctx.createGain();
+  out.gain.value = 0.16;
+  const soft = ctx.createBiquadFilter();
+  soft.type = "lowpass";
+  soft.frequency.value = 7000;
+  out.connect(soft).connect(ctx.destination);
 
-  // "ka": golpecito corto del cajón (ruido filtrado).
-  const len = Math.floor(ctx.sampleRate * 0.05);
+  const tone = (freq, start, level, dur) => {
+    const osc = ctx.createOscillator();
+    osc.frequency.value = freq;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, start);
+    g.gain.exponentialRampToValueAtTime(level, start + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+    osc.connect(g).connect(out);
+    osc.start(start);
+    osc.stop(start + dur + 0.05);
+  };
+
+  // "Cha": un golpe de brillo metálico muy corto.
+  const len = Math.floor(ctx.sampleRate * 0.09);
   const buf = ctx.createBuffer(1, len, ctx.sampleRate);
   const data = buf.getChannelData(0);
-  for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / len);
+  for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / len) ** 2;
   const noise = ctx.createBufferSource();
   noise.buffer = buf;
-  const band = ctx.createBiquadFilter();
-  band.type = "bandpass";
-  band.frequency.value = 2200;
-  band.Q.value = 1.2;
-  const ng = ctx.createGain();
-  ng.gain.value = 0.35;
-  noise.connect(band).connect(ng).connect(master);
-  noise.start(t0);
+  const hp = ctx.createBiquadFilter();
+  hp.type = "highpass";
+  hp.frequency.value = 3500;
+  const cha = ctx.createGain();
+  cha.gain.value = 0.35;
+  noise.connect(hp).connect(cha).connect(out);
+  noise.start(t);
+  tone(3520, t, 0.12, 0.09);
 
-  // "ching": dos campanitas con armónicos de campana que se desvanecen.
-  [
-    [1568, 0.1],
-    [2093, 0.17],
-  ].forEach(([f, delay]) => {
-    [
-      [1, 0.22],
-      [2.76, 0.06],
-      [5.4, 0.02],
-    ].forEach(([mult, peak]) => {
-      const o = ctx.createOscillator();
-      o.type = "sine";
-      o.frequency.value = f * mult;
-      const g = ctx.createGain();
-      const s = t0 + delay;
-      g.gain.setValueAtTime(0.0001, s);
-      g.gain.exponentialRampToValueAtTime(peak, s + 0.008);
-      g.gain.exponentialRampToValueAtTime(0.0001, s + 1.1);
-      o.connect(g).connect(master);
-      o.start(s);
-      o.stop(s + 1.15);
-    });
-  });
+  // Monedas: unos tintineos agudos y breves.
+  [0.14, 0.2, 0.27, 0.33].forEach((d, i) => tone(4200 + i * 370, t + d, 0.05, 0.12));
+
+  // "Ching": campana brillante con parciales metálicos y un leve brillo (dos osciladores casi iguales).
+  const ching = t + 0.12;
+  for (const detune of [1, 1.004]) {
+    for (const [mult, level] of [[1, 0.32], [2, 0.12], [2.76, 0.1], [5.4, 0.04]]) tone(2349 * mult * detune, ching, level, 1.1 / Math.sqrt(mult));
+  }
 }
 
 // --- Avisos push: la clienta los activa tocando el botón (el navegador pide permiso) ----
